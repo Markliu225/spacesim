@@ -1,0 +1,5 @@
+0,60,64,256000,100000000,,tokyo_to_ny_gs2gs_regression
+1,60,2,512000,200000000,,tokyo_to_compute_plane0
+2,61,22,512000,300000000,,mumbai_to_compute_plane2
+3,62,42,512000,400000000,,shanghai_to_compute_plane4
+4,32,63,256000,800000000,,compute_plane3_to_saopaulo_response

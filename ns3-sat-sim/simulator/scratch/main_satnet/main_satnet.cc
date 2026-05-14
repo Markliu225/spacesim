@@ -40,6 +40,10 @@
 #include "ns3/ipv4-arbiter-routing-helper.h"
 #include "ns3/gsl-if-bandwidth-helper.h"
 
+// Phase B (LLM-on-satellite): LLM workload scheduler. No-op unless
+// `enable_llm_workload=true` is set in the run config.
+#include "ns3/llm-workload-scheduler.h"
+
 using namespace ns3;
 
 int main(int argc, char *argv[]) {
@@ -81,6 +85,9 @@ int main(int argc, char *argv[]) {
     // Schedule pings
     PingmeshScheduler pingmeshScheduler(basicSimulation, topology); // Requires enable_pingmesh_scheduler=true
 
+    // Phase B: LLM workload (Requires enable_llm_workload=true)
+    LlmWorkloadScheduler llmWorkloadScheduler(basicSimulation, topology->GetNodes());
+
     // Run simulation
     basicSimulation->Run();
 
@@ -92,6 +99,9 @@ int main(int argc, char *argv[]) {
 
     // Write pingmesh results
     pingmeshScheduler.WriteResults();
+
+    // Write LLM workload results (no-op if not enabled)
+    llmWorkloadScheduler.WriteResults();
 
     // Collect utilization statistics
     topology->CollectUtilizationStatistics();

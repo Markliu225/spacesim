@@ -1,0 +1,49 @@
+# -*- Mode: python; py-indent-offset: 4; indent-tabs-mode: nil; coding: utf-8; -*-
+
+def build(bld):
+
+    # Register 'llm-workload' module (Phase B of the LLM-on-satellite project).
+    # Dependencies:
+    #   core              — TypeId, attributes, RNG, Simulator
+    #   network           — Packet, Tag, Address
+    #   internet          — UDP socket, Ipv4
+    #   applications      — base Application class (transitively)
+    #   basic-sim         — BasicSimulation / parse_boolean / exp-util,
+    #                       used by LlmWorkloadScheduler (main_satnet glue)
+    module = bld.create_ns3_module(
+        'llm-workload',
+        ['core', 'network', 'internet', 'applications', 'basic-sim'],
+    )
+
+    module.source = [
+        'model/llm-packet-tag.cc',
+        'model/llm-sink-application.cc',
+        'model/llm-request-application.cc',
+        'helper/llm-sink-helper.cc',
+        'helper/llm-request-helper.cc',
+        'helper/llm-workload-schedule-reader.cc',
+        'helper/llm-workload-scheduler.cc',
+    ]
+
+    # Public headers (any include "ns3/llm-..." must be listed here)
+    headers = bld(features='ns3header')
+    headers.module = 'llm-workload'
+    headers.source = [
+        'model/llm-packet-tag.h',
+        'model/llm-sink-application.h',
+        'model/llm-request-application.h',
+        'helper/llm-sink-helper.h',
+        'helper/llm-request-helper.h',
+        'helper/llm-workload-schedule-reader.h',
+        'helper/llm-workload-scheduler.h',
+    ]
+
+    # Tests
+    module_test = bld.create_ns3_module_test_library('llm-workload')
+    module_test.source = [
+        'test/llm-workload-test-suite.cc',
+    ]
+
+    # Examples
+    if bld.env.ENABLE_EXAMPLES:
+        bld.recurse('examples')

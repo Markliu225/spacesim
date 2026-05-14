@@ -41,17 +41,47 @@ test -f "$PHASE_A/satellite_roles.txt" || { echo "FATAL: satellite_roles.txt mis
 test -f "$PHASE_A/config_ns3_phase_a.properties" || { echo "FATAL: config missing"; exit 1; }
 test -f "$PHASE_A/schedule_gs_to_compute.csv" || { echo "FATAL: schedule missing"; exit 1; }
 
-# Sanity: every fstate file has been augmented.
-NUM_FSTATE=$(ls "$DYN_DIR"/fstate_*.txt | wc -l)
-NUM_AUGMENTED=$(grep -l 'PHASE_A_AUGMENT' "$DYN_DIR"/fstate_*.txt 2>/dev/null | wc -l)
-echo "  fstate files       : $NUM_FSTATE"
-echo "  augmented fstate   : $NUM_AUGMENTED"
-if [ "$NUM_AUGMENTED" -ne "$NUM_FSTATE" ]; then
-    echo "FATAL: $((NUM_FSTATE - NUM_AUGMENTED)) fstate files are not augmented."
-    echo "       Run augment_fstate.py first."
-    exit 1
-fi
-echo "  ok."
+# Sanity: every fstate file ns-3 will *actually read* must contain a
+# forwarding entry for our compute-SAT dst. ns-3 reads at t = 0,
+# INTERVAL, 2*INTERVAL, ... while t < SIM_END_NS. We rely on
+# augment_fstate.py's .phase_a_augment.json manifest as the authoritative
+# "(dst, t) augmented" record, with a CSV-probe fallback for runs that
+# pre-date the manifest. Comment-line check is a hard guard because ns-3's
+# parser SIGIOTs on any line whose comma-split != 5.
+INTERVAL_NS=$(grep '^dynamic_state_update_interval_ns=' "$PHASE_A/config_ns3_phase_a.properties" | cut -d= -f2 | tr -d '"' | tr -d ' ')
+SIM_END_NS=$(grep '^simulation_end_time_ns=' "$PHASE_A/config_ns3_phase_a.properties" | cut -d= -f2 | tr -d '"' | tr -d ' ')
+DST_NODE=$(head -1 "$PHASE_A/schedule_gs_to_compute.csv" | cut -d, -f3)
+MANIFEST="$DYN_DIR/.phase_a_augment.json"
+echo "  dynamic_state_update_interval_ns = $INTERVAL_NS"
+echo "  simulation_end_time_ns           = $SIM_END_NS"
+echo "  schedule dst node                = $DST_NODE"
+echo "  augment manifest                 : $(test -f "$MANIFEST" && echo present || echo absent)"
+REQUIRED_TS=$(seq 0 "$INTERVAL_NS" $((SIM_END_NS - 1)))
+echo "  fstate timesteps ns-3 will read  : $(echo $REQUIRED_TS | wc -w)"
+PY=/home/mark/spacesim/venv/bin/python
+for t in $REQUIRED_TS; do
+    f="$DYN_DIR/fstate_${t}.txt"
+    test -f "$f" || { echo "FATAL: missing $f"; exit 1; }
+    gf="$DYN_DIR/gsl_if_bandwidth_${t}.txt"
+    test -f "$gf" || { echo "FATAL: missing $gf"; exit 1; }
+    # Manifest preferred; else CSV probe.
+    if [ -f "$MANIFEST" ] && "$PY" -c "
+import json, sys
+m = json.load(open('$MANIFEST'))
+sys.exit(0 if $t in m.get('$DST_NODE', []) else 1)
+" 2>/dev/null; then
+        :  # manifest says (dst=$DST_NODE, t=$t) is augmented
+    else
+        awk -F, -v dst="$DST_NODE" '$2==dst {found=1; exit} END {exit !found}' "$f" \
+            || { echo "FATAL: $f has no row with dst=$DST_NODE (run augment_fstate.py)"; exit 1; }
+    fi
+    if grep -q '^#' "$f"; then
+        echo "FATAL: $f has a '#' comment line (ns-3 parser will abort)."
+        echo "       Run: augment_fstate.py --rewrite --dst-sats $DST_NODE"
+        exit 1
+    fi
+done
+echo "  ok: all required fstate files present, dst=$DST_NODE rows found, no comment lines."
 echo
 
 # 2. Materialise run dir
@@ -59,11 +89,15 @@ echo "-- materialising run dir --"
 mkdir -p "$RUN_DIR"
 mkdir -p "$RUN_DIR/logs_ns3"
 # Use symlinks so updates to the canonical files in phase_a/ flow through
-# without copy drift.
+# without copy drift. satellite_roles.txt is required by the patched
+# TopologySatelliteNetwork (Phase A extension) -- it reads it from the
+# run dir to add compute SATs to m_endpoints.
 ln -sf "$PHASE_A/config_ns3_phase_a.properties" "$RUN_DIR/config_ns3.properties"
 ln -sf "$PHASE_A/schedule_gs_to_compute.csv"    "$RUN_DIR/schedule.csv"
+ln -sf "$PHASE_A/satellite_roles.txt"           "$RUN_DIR/satellite_roles.txt"
 echo "  $RUN_DIR/config_ns3.properties -> phase_a/config_ns3_phase_a.properties"
 echo "  $RUN_DIR/schedule.csv          -> phase_a/schedule_gs_to_compute.csv"
+echo "  $RUN_DIR/satellite_roles.txt   -> phase_a/satellite_roles.txt"
 echo
 
 # 3. Run ns-3

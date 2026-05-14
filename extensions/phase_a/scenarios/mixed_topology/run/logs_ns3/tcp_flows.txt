@@ -1,0 +1,6 @@
+TCP Flow ID     Source    Target    Size            Start time (ns)   End time (ns)     Duration        Sent            Progress     Avg. rate       Finished?     Metadata
+0               60        64        2.05 Mbit       100000000         997434610         897.43 ms       2.05 Mbit       100.0%       2.3 Mbit/s      YES           tokyo_to_ny_gs2gs_regression
+1               60        2         4.10 Mbit       200000000         1317035137        1117.04 ms      4.10 Mbit       100.0%       3.7 Mbit/s      YES           tokyo_to_compute_plane0
+2               61        22        4.10 Mbit       300000000         1618090339        1318.09 ms      4.10 Mbit       100.0%       3.1 Mbit/s      YES           mumbai_to_compute_plane2
+3               62        42        4.10 Mbit       400000000         1234048937        834.05 ms       4.10 Mbit       100.0%       4.9 Mbit/s      YES           shanghai_to_compute_plane4
+4               32        63        2.05 Mbit       800000000         1935633952        1135.63 ms      2.05 Mbit       100.0%       1.8 Mbit/s      YES           compute_plane3_to_saopaulo_response

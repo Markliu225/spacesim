@@ -1,0 +1,159 @@
+Waf: Entering directory `/home/mark/spacesim/hypatia/ns3-sat-sim/simulator/build/debug_all'
+Waf: Leaving directory `/home/mark/spacesim/hypatia/ns3-sat-sim/simulator/build/debug_all'
+Build commands will be stored in build/debug_all/compile_commands.json
+'build' finished successfully (0.876s)
+BASIC SIMULATION START
+  > Date... Thursday May 14, 2026
+  > Time... 10:19:10
+
+CONFIGURE RUN DIRECTORY
+  > Run directory: /home/mark/spacesim/hypatia/extensions/phase_b/scenarios/llm_workload/run
+  > Logs directory: /home/mark/spacesim/hypatia/extensions/phase_b/scenarios/llm_workload/run/logs_ns3
+
+CONFIGURATION
+-----
+KEY                                       VALUE
+dynamic_state_update_interval_ns          100000000
+enable_isl_utilization_tracking           false
+enable_llm_workload                       true
+enable_pingmesh_scheduler                 false
+enable_tcp_flow_scheduler                 false
+enable_udp_burst_scheduler                false
+gsl_data_rate_megabit_per_s               10.0
+gsl_max_queue_size_pkts                   100
+isl_data_rate_megabit_per_s               10.0
+isl_max_queue_size_pkts                   100
+llm_workload_log_filename                 llm_workload_sink.csv
+llm_workload_schedule_filename            llm_workload_schedule.csv
+satellite_network_dir                     ../gen_data/tiny_walker_1500_isls_plus_grid_5cities_algorithm_free_one_only_over_isls
+satellite_network_routes_dir              ../gen_data/tiny_walker_1500_isls_plus_grid_5cities_algorithm_free_one_only_over_isls/dynamic_state_100ms_for_5s
+simulation_end_time_ns                    5000000000
+simulation_seed                           246810
+tcp_socket_type                           TcpNewReno
+
+CONFIGURE SIMULATION
+  > Distributed is not enabled
+  > System id........ 0
+  > No. of systems... 1
+  > Seed............. 246810
+  > Duration......... 5.00 s (5000000000 ns)
+
+TCP OPTIMIZATION BASIC
+  > Clock granularity.......... 1 ns
+  > Initial CWND............... 10 packets
+  > Send buffer size........... 33.554 MB
+  > Receive buffer size........ 33.554 MB
+  > Segment size............... 1380 byte
+  > Timestamp option........... enabled
+  > SACK option................ enabled
+  > Window scaling option...... enabled
+  > Pacing..................... disabled
+
+SATELLITE NETWORK
+  > Number of satellites........ 60
+  > Number of ground stations... 5
+  > Compute SATs from satellite_roles.txt added as endpoints: 6
+  > Number of nodes............. 65
+  > Installed Internet stacks
+  > Reading and creating ISLs
+    >> ISL data rate........ 10 Mbit/s
+    >> ISL max queue size... 100 packets
+    >> Created 120 ISL(s)
+  > Creating GSLs
+    >> GSL data rate........ 10 Mbit/s
+    >> GSL max queue size... 100 packets
+    >> Read all GSL interfaces information for the 65 nodes
+    >> Number of GSL interfaces to create... 65
+    >> Finished install GSL interfaces (interfaces, network devices, one shared channel)
+    >> Finished installing traffic control layer qdisc which will be removed later
+    >> Assigning IP addresses...
+       (with many interfaces, this can take long due to an inefficient IP assignment conflict checker)
+       Progress (as there are more entries, it becomes slower):
+       - 10.77% (t = 0.00 s, update took 0.00 s)
+       - 21.54% (t = 0.00 s, update took 0.00 s)
+       - 32.31% (t = 0.00 s, update took 0.00 s)
+       - 43.08% (t = 0.00 s, update took 0.00 s)
+       - 53.85% (t = 0.00 s, update took 0.00 s)
+       - 64.62% (t = 0.00 s, update took 0.00 s)
+       - 75.38% (t = 0.01 s, update took 0.00 s)
+       - 86.15% (t = 0.01 s, update took 0.00 s)
+       - 96.92% (t = 0.01 s, update took 0.00 s)
+       - 100.00% (t = 0.01 s, update took 0.00 s)
+    >> Finished assigning IPs
+    >> Removing traffic control layers (qdiscs)...
+    >> Finished removing GSL queueing disciplines
+    >> GSL interfaces are setup
+  > Populating ARP caches
+
+SETUP SINGLE FORWARDING ROUTING
+  > Create initial single forwarding state
+  > Setting the routing arbiter on each node
+  > Forward state update interval: 100000000ns
+  > Perform first forwarding state load for t=0
+
+SETUP GSL IF BANDWIDTH HELPER
+  > GSL interface bandwidth update interval: 100000000ns
+  > Perform first GSL interface bandwidth setting for t=0
+
+TCP FLOW SCHEDULER
+  > Not enabled explicitly, so disabled
+
+UDP BURST SCHEDULER
+  > Not enabled explicitly, so disabled
+
+PINGMESH SCHEDULER
+  > Not enabled explicitly, so disabled
+
+LLM WORKLOAD SCHEDULER
+  > LLM workload scheduler is enabled
+  > Read schedule (5 entries)
+  > Installed sink on node 2 (log: /home/mark/spacesim/hypatia/extensions/phase_b/scenarios/llm_workload/run/logs_ns3/llm_workload_sink_sink_node2.csv)
+  > Installed request app on node 60 -> 10.0.2.2:9999  lambda=10 req/s  L_in=N(500,100)
+  > Installed sink on node 22 (log: /home/mark/spacesim/hypatia/extensions/phase_b/scenarios/llm_workload/run/logs_ns3/llm_workload_sink_sink_node22.csv)
+  > Installed request app on node 61 -> 10.0.25.2:9999  lambda=15 req/s  L_in=N(800,150)
+  > Installed sink on node 42 (log: /home/mark/spacesim/hypatia/extensions/phase_b/scenarios/llm_workload/run/logs_ns3/llm_workload_sink_sink_node42.csv)
+  > Installed request app on node 62 -> 10.0.65.2:9999  lambda=5 req/s  L_in=N(300,50)
+  > Installed sink on node 32 (log: /home/mark/spacesim/hypatia/extensions/phase_b/scenarios/llm_workload/run/logs_ns3/llm_workload_sink_sink_node32.csv)
+  > Installed request app on node 63 -> 10.0.45.2:9999  lambda=8 req/s  L_in=N(600,120)
+  > Installed sink on node 12 (log: /home/mark/spacesim/hypatia/extensions/phase_b/scenarios/llm_workload/run/logs_ns3/llm_workload_sink_sink_node12.csv)
+  > Installed request app on node 64 -> 10.0.5.2:9999  lambda=12 req/s  L_in=N(500,80)
+SIMULATION
+Running the simulation for 5.00 simulation seconds...
+Finished simulation.
+Simulation of 5.0 seconds took in wallclock time 0.3 seconds.
+
+STORE TCP FLOW RESULTS
+  > Not enabled, so no TCP flow results are written
+
+STORE UDP BURST RESULTS
+  > Not enabled, so no UDP burst results are written
+
+STORE PINGMESH RESULTS
+  > Not enabled, so no pingmesh results are written
+
+STORE LLM WORKLOAD RESULTS
+  > tx_request_count = 243
+  > tx_packet_count  = 538
+  > rx_packet_count  = 536  (99.628253%)
+  > Wrote /home/mark/spacesim/hypatia/extensions/phase_b/scenarios/llm_workload/run/logs_ns3/llm_workload_summary.csv
+CLEAN-UP
+  > Simulator is destroyed
+
+TIMING RESULTS
+------
+[    0.0 -     0.0] (0.0 s) :: Configure run and logs directory
+[    0.0 -     0.0] (0.0 s) :: Configure simulator
+[    0.0 -     0.0] (0.0 s) :: Setup TCP parameters
+[    0.0 -     0.1] (0.1 s) :: Create initial single forwarding state
+[    0.1 -     0.2] (0.0 s) :: Setup routing arbiter on each node
+[    0.2 -     0.2] (0.0 s) :: Create initial single forwarding state
+[    0.2 -     0.2] (0.0 s) :: Set first GSL interface bandwidth
+[    0.2 -     0.2] (0.0 s) :: Setup LLM workload scheduler
+[    0.2 -     0.2] (0.0 s) :: Whatever is between previous timestamp and the simulation run
+[    0.2 -     0.4] (0.3 s) :: Run simulation
+[    0.4 -     0.4] (0.0 s) :: Destroy simulator
+
+BASIC SIMULATION END
+  > Date... Thursday May 14, 2026
+  > Time... 10:19:10
+

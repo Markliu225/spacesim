@@ -57,9 +57,44 @@ namespace ns3 {
         ReadGroundStations();
         std::cout << "  > Number of ground stations... " << m_groundStationNodes.GetN() << std::endl;
 
-        // Only ground stations are valid endpoints
+        // Ground stations are always valid endpoints.
         for (uint32_t i = 0; i < m_groundStations.size(); i++) {
             m_endpoints.insert(m_satelliteNodes.GetN() + i);
+        }
+
+        // Phase A extension (LLM-on-satellite):
+        // If the run dir ships a `satellite_roles.txt` file, also accept any
+        // satellite marked as type=C (compute) as a flow endpoint. Format is
+        // one row per satellite: `<sat_id>,<C|T>`. Missing file or absent
+        // rows -> no extra endpoints, so behaviour is identical to upstream
+        // Hypatia for runs that don't opt in.
+        std::string roles_path = m_basicSimulation->GetRunDir() + "/satellite_roles.txt";
+        if (file_exists(roles_path)) {
+            std::ifstream rf(roles_path);
+            std::string line;
+            size_t added = 0;
+            while (std::getline(rf, line)) {
+                if (line.empty() || line[0] == '#') continue;
+                auto comma = line.find(',');
+                if (comma == std::string::npos) continue;
+                int sat_id;
+                try {
+                    sat_id = std::stoi(line.substr(0, comma));
+                } catch (const std::exception&) {
+                    continue;
+                }
+                if (sat_id < 0 || static_cast<uint32_t>(sat_id) >= m_satelliteNodes.GetN()) {
+                    continue;
+                }
+                // role char is the first non-space char after the comma
+                size_t k = comma + 1;
+                while (k < line.size() && std::isspace(static_cast<unsigned char>(line[k]))) ++k;
+                if (k < line.size() && line[k] == 'C') {
+                    m_endpoints.insert(sat_id);
+                    ++added;
+                }
+            }
+            std::cout << "  > Compute SATs from satellite_roles.txt added as endpoints: " << added << std::endl;
         }
 
         // All nodes
