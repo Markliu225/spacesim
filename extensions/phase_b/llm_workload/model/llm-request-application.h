@@ -51,6 +51,13 @@ private:
     double    m_L_in_std;
     uint32_t  m_L_in_min;
     uint32_t  m_L_in_max;
+    // Phase C additions: L_out distribution for the response (sampled at
+    // request time so the compute SAT can plan its decode work and the
+    // response burst size is known at compute time).
+    double    m_L_out_mean;
+    double    m_L_out_std;
+    uint32_t  m_L_out_min;
+    uint32_t  m_L_out_max;
     uint32_t  m_bytes_per_token;
     uint32_t  m_packet_payload;
 
@@ -58,6 +65,7 @@ private:
     Ptr<Socket>                       m_socket;
     Ptr<ExponentialRandomVariable>    m_iat_rv;     // inter-arrival time
     Ptr<NormalRandomVariable>         m_L_in_rv;
+    Ptr<NormalRandomVariable>         m_L_out_rv;   // Phase C
     EventId                           m_next_event;
     uint64_t                          m_req_counter;
     uint64_t                          m_tx_pkt_count;

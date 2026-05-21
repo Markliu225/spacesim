@@ -1,0 +1,11 @@
+# Dashboard runtime deps. Run inside the project venv:
+#   pip install -r requirements.txt
+#
+# Versions are floors — tested against the listed lower bound but later
+# minor versions should work fine. Pin in CI if you need byte reproducibility.
+
+streamlit>=1.30
+plotly>=5.18
+pandas>=2.0
+numpy>=1.23
+pyyaml>=6.0

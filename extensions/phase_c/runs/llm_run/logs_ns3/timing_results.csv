@@ -1,0 +1,11 @@
+Configure run and logs directory,647858
+Configure simulator,967073
+Setup TCP parameters,312464
+Create initial single forwarding state,5687663725
+Setup routing arbiter on each node,20647379465
+Create initial single forwarding state,932960846
+Set first GSL interface bandwidth,6653581
+Setup LLM workload scheduler,5788375
+Whatever is between previous timestamp and the simulation run,7180
+Run simulation,261328596
+Destroy simulator,89775178

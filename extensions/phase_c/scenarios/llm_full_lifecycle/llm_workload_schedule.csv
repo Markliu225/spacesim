@@ -1,0 +1,18 @@
+# Phase C full lifecycle — 5 GS → 5 compute SAT, request/response loop.
+#
+# 15-column format:
+#   src_gs, dst_compute, lambda,
+#   L_in_mean, L_in_std, L_in_min, L_in_max,
+#   L_out_mean, L_out_std, L_out_min, L_out_max,
+#   bytes_per_token, packet_payload, start_ns, stop_ns
+#
+# Tiny-Walker-1500 constellation (reuse from mixed_topology):
+#   60 sats, 6 planes × 10 sats; compute set = {2, 12, 22, 32, 42, 52}.
+#   Sat node IDs 0..59; GS node IDs 60..64.
+#
+# Five concurrent LLM inference flows with varied prompt / response sizes:
+60,2, 4.0,500.0,100.0,1,2000,200.0,50.0,1,1000,4,1400,200000000,3500000000
+61,22,6.0,800.0,150.0,1,3000,300.0,60.0,1,1200,4,1400,300000000,3500000000
+62,42,3.0,300.0, 50.0,1,1500,150.0,30.0,1, 800,4,1400,400000000,3500000000
+63,32,4.0,600.0,120.0,1,2000,250.0,50.0,1,1000,4,1400,500000000,3500000000
+64,12,5.0,500.0, 80.0,1,1500,200.0,40.0,1,1000,4,1400,300000000,3500000000

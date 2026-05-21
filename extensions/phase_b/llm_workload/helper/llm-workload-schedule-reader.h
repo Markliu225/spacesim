@@ -26,6 +26,12 @@ struct LlmWorkloadEntry {
     double  L_in_std;
     uint32_t L_in_min;
     uint32_t L_in_max;
+    // Phase C: L_out distribution. Phase B-only callers (11-column CSV)
+    // get defaults (mean=200, std=50, [1,1000]).
+    double  L_out_mean;
+    double  L_out_std;
+    uint32_t L_out_min;
+    uint32_t L_out_max;
     uint32_t bytes_per_token;
     uint32_t packet_payload;
     int64_t start_time_ns;

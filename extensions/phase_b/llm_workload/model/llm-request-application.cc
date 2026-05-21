@@ -60,6 +60,27 @@ LLMRequestApplication::GetTypeId(void)
                       UintegerValue(2000),
                       MakeUintegerAccessor(&LLMRequestApplication::m_L_in_max),
                       MakeUintegerChecker<uint32_t>(1))
+        // Phase C: L_out distribution.
+        .AddAttribute("LOutMean",
+                      "Mean of expected response-token count (decode length).",
+                      DoubleValue(200.0),
+                      MakeDoubleAccessor(&LLMRequestApplication::m_L_out_mean),
+                      MakeDoubleChecker<double>(0.0))
+        .AddAttribute("LOutStd",
+                      "Std dev of expected response-token count.",
+                      DoubleValue(50.0),
+                      MakeDoubleAccessor(&LLMRequestApplication::m_L_out_std),
+                      MakeDoubleChecker<double>(0.0))
+        .AddAttribute("LOutMin",
+                      "Lower clamp on L_out.",
+                      UintegerValue(1),
+                      MakeUintegerAccessor(&LLMRequestApplication::m_L_out_min),
+                      MakeUintegerChecker<uint32_t>(1))
+        .AddAttribute("LOutMax",
+                      "Upper clamp on L_out.",
+                      UintegerValue(1000),
+                      MakeUintegerAccessor(&LLMRequestApplication::m_L_out_max),
+                      MakeUintegerChecker<uint32_t>(1))
         .AddAttribute("BytesPerToken",
                       "Encoded bytes per input token.",
                       UintegerValue(4),
@@ -80,6 +101,10 @@ LLMRequestApplication::LLMRequestApplication()
       m_L_in_std(100.0),
       m_L_in_min(1),
       m_L_in_max(2000),
+      m_L_out_mean(200.0),
+      m_L_out_std(50.0),
+      m_L_out_min(1),
+      m_L_out_max(1000),
       m_bytes_per_token(4),
       m_packet_payload(1400),
       m_socket(nullptr),
@@ -124,6 +149,10 @@ LLMRequestApplication::StartApplication()
     m_L_in_rv->SetAttribute("Mean",     DoubleValue(m_L_in_mean));
     m_L_in_rv->SetAttribute("Variance", DoubleValue(m_L_in_std * m_L_in_std));
 
+    m_L_out_rv = CreateObject<NormalRandomVariable>();
+    m_L_out_rv->SetAttribute("Mean",     DoubleValue(m_L_out_mean));
+    m_L_out_rv->SetAttribute("Variance", DoubleValue(m_L_out_std * m_L_out_std));
+
     m_socket = Socket::CreateSocket(GetNode(),
                                     UdpSocketFactory::GetTypeId());
     // Connect-style sends are unnecessary for UDP; we use SendTo.
@@ -159,11 +188,16 @@ LLMRequestApplication::ScheduleNext()
 void
 LLMRequestApplication::EmitRequest()
 {
-    // 1. Sample L_in, clip to configured bounds.
+    // 1. Sample L_in and L_out, clip to configured bounds.
     double L_in_sample = m_L_in_rv->GetValue();
     if (L_in_sample < (double) m_L_in_min) L_in_sample = (double) m_L_in_min;
     if (L_in_sample > (double) m_L_in_max) L_in_sample = (double) m_L_in_max;
     uint32_t L_in = (uint32_t) std::lround(L_in_sample);
+
+    double L_out_sample = m_L_out_rv->GetValue();
+    if (L_out_sample < (double) m_L_out_min) L_out_sample = (double) m_L_out_min;
+    if (L_out_sample > (double) m_L_out_max) L_out_sample = (double) m_L_out_max;
+    uint32_t L_out_expected = (uint32_t) std::lround(L_out_sample);
 
     // 2. Slice into N_pkt UDP packets.
     uint64_t total_bytes = (uint64_t) L_in * m_bytes_per_token;
@@ -186,7 +220,8 @@ LLMRequestApplication::EmitRequest()
                          t_emit_ns,
                          my_node_id,
                          L_in,
-                         0 /* L_out_expected, Phase C will fill */);
+                         L_out_expected,
+                         LLMPacketTag::REQUEST);
         pkt->AddPacketTag(tag);
         m_socket->SendTo(pkt, 0, dst);
         ++m_tx_pkt_count;

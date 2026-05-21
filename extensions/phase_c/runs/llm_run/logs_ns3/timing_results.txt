@@ -1,0 +1,11 @@
+[    0.0 -     0.0] (0.0 s) :: Configure run and logs directory
+[    0.0 -     0.0] (0.0 s) :: Configure simulator
+[    0.0 -     0.0] (0.0 s) :: Setup TCP parameters
+[    0.0 -     5.7] (5.7 s) :: Create initial single forwarding state
+[    5.7 -    26.3] (20.6 s) :: Setup routing arbiter on each node
+[   26.3 -    27.3] (0.9 s) :: Create initial single forwarding state
+[   27.3 -    27.3] (0.0 s) :: Set first GSL interface bandwidth
+[   27.3 -    27.3] (0.0 s) :: Setup LLM workload scheduler
+[   27.3 -    27.3] (0.0 s) :: Whatever is between previous timestamp and the simulation run
+[   27.3 -    27.5] (0.3 s) :: Run simulation
+[   27.5 -    27.6] (0.1 s) :: Destroy simulator

@@ -2,14 +2,10 @@
 
 def build(bld):
 
-    # Register 'llm-workload' module (Phase B of the LLM-on-satellite project).
+    # Register 'llm-workload' module.
     # Dependencies:
-    #   core              — TypeId, attributes, RNG, Simulator
-    #   network           — Packet, Tag, Address
-    #   internet          — UDP socket, Ipv4
-    #   applications      — base Application class (transitively)
-    #   basic-sim         — BasicSimulation / parse_boolean / exp-util,
-    #                       used by LlmWorkloadScheduler (main_satnet glue)
+    #   core / network / internet / applications  — base ns-3 stack
+    #   basic-sim                                  — BasicSimulation, exp-util
     module = bld.create_ns3_module(
         'llm-workload',
         ['core', 'network', 'internet', 'applications', 'basic-sim'],
@@ -19,31 +15,44 @@ def build(bld):
         'model/llm-packet-tag.cc',
         'model/llm-sink-application.cc',
         'model/llm-request-application.cc',
+        # Phase C additions:
+        'model/gather-application.cc',
+        'model/compute-application.cc',
+        'model/llm-response-sink-application.cc',
+
         'helper/llm-sink-helper.cc',
         'helper/llm-request-helper.cc',
         'helper/llm-workload-schedule-reader.cc',
         'helper/llm-workload-scheduler.cc',
+        # Phase C additions:
+        'helper/gather-helper.cc',
+        'helper/compute-helper.cc',
+        'helper/llm-response-sink-helper.cc',
     ]
 
-    # Public headers (any include "ns3/llm-..." must be listed here)
     headers = bld(features='ns3header')
     headers.module = 'llm-workload'
     headers.source = [
         'model/llm-packet-tag.h',
         'model/llm-sink-application.h',
         'model/llm-request-application.h',
+        'model/gather-application.h',
+        'model/compute-application.h',
+        'model/llm-response-sink-application.h',
+
         'helper/llm-sink-helper.h',
         'helper/llm-request-helper.h',
         'helper/llm-workload-schedule-reader.h',
         'helper/llm-workload-scheduler.h',
+        'helper/gather-helper.h',
+        'helper/compute-helper.h',
+        'helper/llm-response-sink-helper.h',
     ]
 
-    # Tests
     module_test = bld.create_ns3_module_test_library('llm-workload')
     module_test.source = [
         'test/llm-workload-test-suite.cc',
     ]
 
-    # Examples
     if bld.env.ENABLE_EXAMPLES:
         bld.recurse('examples')
