@@ -155,26 +155,16 @@ def build_lifecycle_df(logs: Dict[str, pd.DataFrame]) -> pd.DataFrame:
         observed_response_pkts=("response_pkt_id", "count"),
     ).reset_index()
 
-    # gather + compute join key strategy:
-    #   - TCP v2 schema (Option B): compute log carries `src_node_id` and
-    #     L_out is sampled by the compute SAT, so gather's L_out_expected
-    #     is always 0. Join on (req_id, compute_sat_id, src_node_id, L_in).
-    #   - Legacy UDP schema: compute log has no src_node_id, but L_out
-    #     was preserved from gather's L_out_expected. Join on
-    #     (req_id, compute_sat_id, L_in, L_out_expected==L_out).
-    if "src_node_id" in compute.columns:
-        g_c = gather.merge(
-            compute,
-            on=["req_id", "compute_sat_id", "src_node_id", "L_in"],
-            suffixes=("_g", "_c"),
-        )
-    else:
-        gather_for_join = gather.rename(columns={"L_out_expected": "L_out"})
-        g_c = gather_for_join.merge(
-            compute,
-            on=["req_id", "compute_sat_id", "L_in", "L_out"],
-            suffixes=("_g", "_c"),
-        )
+    # gather + compute: join on (req_id, compute_sat_id, src_node_id, L_in).
+    # src_node_id is the key disambiguator in multi-GS scenarios where
+    # different GSes can each emit a request with the same per-source
+    # req_id counter; the compute log carries src_node_id explicitly
+    # for exactly this reason.
+    g_c = gather.merge(
+        compute,
+        on=["req_id", "compute_sat_id", "src_node_id", "L_in"],
+        suffixes=("_g", "_c"),
+    )
 
     # gather+compute → response: link via src_node_id == gs_node_id.
     df = g_c.merge(

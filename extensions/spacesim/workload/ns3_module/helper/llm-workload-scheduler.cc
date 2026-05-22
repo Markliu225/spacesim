@@ -71,18 +71,8 @@ LlmWorkloadScheduler::LlmWorkloadScheduler(
         return;
     }
 
-    // For back-compat with older configs. We always run the full lifecycle now.
-    (void) parse_boolean(m_basicSimulation->GetConfigParamOrDefault(
-        "enable_llm_response_loop", "true"));
-    // basic-sim aborts on any unread config key. The previous (UDP) module
-    // accepted `gather_timeout_ns` for the gather-side timeout; TCP gets
-    // closure via FIN so we ignore the value but still consume the key
-    // so old configs that still set it don't crash.
-    (void) m_basicSimulation->GetConfigParamOrDefault(
-        "gather_timeout_ns", "0");
-
-    std::cout << "  > Mode: Phase C (gather + compute + response, TCP)"
-              << std::endl;
+    std::cout << "  > Transport: TCP, full request lifecycle "
+                 "(gather → compute → response)" << std::endl;
 
     std::string sched_filename =
         m_basicSimulation->GetRunDir() + "/" +

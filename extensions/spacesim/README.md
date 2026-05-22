@@ -29,7 +29,7 @@ cd /home/mark/spacesim/hypatia/extensions/spacesim
 ./run_tests.sh                   # 57 tests, ~5 s
 
 # Or browse cached results without launching anything:
-ls runs/                         # tokyo_to_sat894/, llm_workload_phase_b/, llm_workload_phase_c/
+ls runs/                         # whatever's been generated; tokyo_to_sat894/ ships as a baseline
 ```
 
 The dashboard's sidebar **"Inspect a previous run"** dropdown
@@ -79,9 +79,7 @@ spacesim/
 │   └── llm_full_lifecycle/        — full gather + compute + response lifecycle (was Phase C)
 │
 ├── runs/                          — cached run outputs (regenerable; .gitignore'd)
-│   ├── tokyo_to_sat894/           — single-flow GS→SAT regression (was phase_a/runs/gs0_to_compute_sat)
-│   ├── llm_workload_phase_b/      — LLM sink-only run
-│   └── llm_workload_phase_c/      — full-lifecycle run (104 requests, used by tests)
+│   └── tokyo_to_sat894/           — single-flow GS→SAT regression (basic-sim TCP flow, not LLM workload)
 │
 ├── cache/                         — topology cache keyed by ExperimentConfig.topology_hash()
 │
@@ -105,15 +103,40 @@ spacesim/
    ``m_endpoints`` set (so the schedule reader accepts SAT-as-endpoint).
    `topology/roles.py` writes this format.
 
-2. **Phase-C log schema** — three CSV families produced by the ns-3
+2. **LLM log schema** — three CSV families produced by the ns-3
    ``llm-workload`` module:
-   - `llm_gather_node<sat>.csv` (has the keystone `t_emit_ns` field)
-   - `llm_compute_node<sat>.csv`
-   - `llm_response_node<gs>.csv` (multi-row per `req_id` for multi-packet responses)
+   - `llm_gather_node<sat>.csv` — has the keystone `t_emit_ns` field.
+   - `llm_compute_node<sat>.csv` — carries `src_node_id` so it can be
+     joined with gather unambiguously in multi-GS scenarios.
+   - `llm_response_node<gs>.csv` — two rows per request: a "first byte"
+     event (`response_pkt_id=0`) and a "last byte" event
+     (`response_pkt_id=1`); the parser's group-by min/max recovers
+     TTFT vs total.
 
-   `analysis/lifecycle.py::build_lifecycle_df` joins them; the join
-   keys are explained in that file's docstring (`req_id` is **per-GS**,
-   not global, so naive merging produces a cartesian explosion).
+   `analysis/lifecycle.py::build_lifecycle_df` joins on
+   `(req_id, compute_sat_id, src_node_id, L_in)` for gather + compute,
+   then `(req_id, src_node_id == gs_node_id)` for the response side.
+
+## Transport: TCP
+
+The ns-3 ``llm-workload`` module uses full TCP end-to-end:
+
+- Each LLM request opens a *fresh* TCP connection from GS → compute SAT.
+- 24-byte in-payload `LLMHeader` (`req_id` / `src_node_id` / `L_in` /
+  `t_emit_ns`) is the first bytes on the stream;
+  `gather-application.cc` reads exactly that, then drains the
+  `L_in × BytesPerToken` prompt bytes.
+- Compute applies `T_compute = α·L_in + β·L_out + γ` where `L_out` is
+  sampled **by the compute SAT itself** from a `Normal(LOutMean,
+  LOutStd)` clipped to `[LOutMin, LOutMax]` — set via
+  `ComputeApplication` TypeId attributes by the scheduler.
+- Response is written back over the **same TCP socket**, `ShutdownSend`
+  half-closes; the GS-side `LLMRequestApplication` logs first-byte and
+  last-byte timestamps when it sees the peer FIN.
+
+T_uplink therefore includes the 3-way handshake (+1 RTT) and TCP
+slow-start ramp on large prompts — the simulator gives you these as
+first-class effects.
 
 ## Pipeline at a glance
 
