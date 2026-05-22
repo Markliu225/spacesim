@@ -1,0 +1,12 @@
+[
+  { "gs_idx": 0, "name": "Tokyo",       "lat":  35.6895,   "lon":  139.69171,  "peak_lambda": 10.0 },
+  { "gs_idx": 1, "name": "Delhi",       "lat":  28.66667,  "lon":   77.21667,  "peak_lambda": 10.0 },
+  { "gs_idx": 2, "name": "Shanghai",    "lat":  31.22222,  "lon":  121.45806,  "peak_lambda": 10.0 },
+  { "gs_idx": 3, "name": "Sao-Paulo",   "lat": -23.5475,   "lon":  -46.63611,  "peak_lambda": 10.0 },
+  { "gs_idx": 4, "name": "Mumbai",      "lat":  19.073975, "lon":   72.880838, "peak_lambda": 10.0 },
+  { "gs_idx": 5, "name": "Mexico-City", "lat":  19.427318, "lon":  -99.141869, "peak_lambda": 10.0 },
+  { "gs_idx": 6, "name": "Beijing",     "lat":  39.9075,   "lon":  116.39723,  "peak_lambda": 10.0 },
+  { "gs_idx": 7, "name": "Osaka",       "lat":  34.675834, "lon":  135.553823, "peak_lambda": 10.0 },
+  { "gs_idx": 8, "name": "Cairo",       "lat":  30.039173, "lon":   31.239411, "peak_lambda": 10.0 },
+  { "gs_idx": 9, "name": "New-York",    "lat":  40.717042, "lon":  -74.003663, "peak_lambda": 10.0 }
+]

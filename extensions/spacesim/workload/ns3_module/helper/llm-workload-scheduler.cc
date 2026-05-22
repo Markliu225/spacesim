@@ -166,13 +166,22 @@ LlmWorkloadScheduler::InstallSchedule()
         std::string response_log = build_log_path(
             m_log_filename_template, "response", entry.src_gs_node_id);
         LLMRequestHelper req_helper(dst_ip, request_port);
-        req_helper.SetAttribute("Lambda",         DoubleValue(entry.lambda_req_per_sec));
-        req_helper.SetAttribute("LInMean",        DoubleValue(entry.L_in_mean));
-        req_helper.SetAttribute("LInStd",         DoubleValue(entry.L_in_std));
+        // L_in clamps are honored in both modes (distribution + replay).
         req_helper.SetAttribute("LInMin",         UintegerValue(entry.L_in_min));
         req_helper.SetAttribute("LInMax",         UintegerValue(entry.L_in_max));
         req_helper.SetAttribute("BytesPerToken",  UintegerValue(entry.bytes_per_token));
         req_helper.SetAttribute("ResponseLogFilename", StringValue(response_log));
+        if (entry.events_filename.empty()) {
+            // Distribution-driven mode.
+            req_helper.SetAttribute("Lambda",  DoubleValue(entry.lambda_req_per_sec));
+            req_helper.SetAttribute("LInMean", DoubleValue(entry.L_in_mean));
+            req_helper.SetAttribute("LInStd",  DoubleValue(entry.L_in_std));
+        } else {
+            // Trace-replay mode: resolve events filename relative to run dir.
+            std::string events_path = m_basicSimulation->GetRunDir() + "/"
+                                      + entry.events_filename;
+            req_helper.SetAttribute("EventsFilename", StringValue(events_path));
+        }
         ApplicationContainer req_apps = req_helper.Install(src_node);
         Ptr<LLMRequestApplication> req_app =
             DynamicCast<LLMRequestApplication>(req_apps.Get(0));
@@ -182,9 +191,15 @@ LlmWorkloadScheduler::InstallSchedule()
         req_app->SetStopTime(NanoSeconds(m_simulation_end_time_ns));
         m_request_apps.push_back(req_app);
 
-        std::cout << "  > Installed Request on node "
-                  << entry.src_gs_node_id << " -> "
-                  << dst_ip << ":" << request_port << std::endl;
+        if (entry.events_filename.empty()) {
+            std::cout << "  > Installed Request (poisson) on node "
+                      << entry.src_gs_node_id << " -> "
+                      << dst_ip << ":" << request_port << std::endl;
+        } else {
+            std::cout << "  > Installed Request (replay " << entry.events_filename
+                      << ") on node " << entry.src_gs_node_id << " -> "
+                      << dst_ip << ":" << request_port << std::endl;
+        }
     }
 }
 

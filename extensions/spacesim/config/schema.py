@@ -63,9 +63,31 @@ class ShellConfig:
 
 @dataclass
 class WorkloadConfig:
-    """LLM request stream parameters, fed straight into the schedule CSV."""
+    """LLM request stream parameters, fed straight into the schedule CSV.
+
+    Two ``source`` modes:
+
+    - ``"synthetic"`` (default): the dashboard writes a 15-column Phase-C
+      schedule and ns-3 generates each GS's request stream from the
+      Poisson(λ_total / N_gs) + Normal(L_in_mean, L_in_std) sample. All
+      L_in / λ fields below are honored.
+    - ``"trace_replay"``: a per-GS events CSV (produced by
+      ``extensions/traffic_generator``) is staged into the run dir and
+      the simulator replays every emit time and L_in verbatim. The λ /
+      L_in_mean / L_in_std fields are then ignored; only the L_in clamps
+      and the L_out distribution still matter.
+    """
 
     gs_set: Literal["top_5_cities", "top_20_cities", "top_100_cities"] = "top_5_cities"
+    source: Literal["synthetic", "trace_replay"] = "synthetic"
+    # Path to a per_gs/ directory containing events_gs<N>_*.csv files
+    # (relative or absolute). Only consulted when source == "trace_replay".
+    trace_per_gs_dir: str = ""
+    # How to stage the events files into the run dir.
+    trace_stage_mode: Literal["copy", "symlink"] = "copy"
+    # GS → compute-SAT routing policy (both modes).
+    dst_strategy: Literal["first_compute", "per_gs_round_robin"] = "first_compute"
+
     lambda_total: float = 10.0  # requests / second, summed across GS
     L_in_mean: float = 500.0    # prompt tokens
     L_in_std: float = 100.0
@@ -172,8 +194,17 @@ class ExperimentConfig:
             if not (0 < s.compute_ratio <= 1):
                 errors.append(f"shell {i}: compute_ratio {s.compute_ratio} outside (0, 1]")
         w = self.workload
-        if w.lambda_total <= 0:
-            errors.append(f"workload: lambda_total must be > 0 (got {w.lambda_total})")
+        if w.source == "synthetic":
+            if w.lambda_total <= 0:
+                errors.append(f"workload: lambda_total must be > 0 (got {w.lambda_total})")
+        elif w.source == "trace_replay":
+            import os.path
+            if not w.trace_per_gs_dir:
+                errors.append("workload: trace_per_gs_dir must be set when source=trace_replay")
+            elif not os.path.isdir(w.trace_per_gs_dir):
+                errors.append(f"workload: trace_per_gs_dir is not a directory: {w.trace_per_gs_dir}")
+        else:
+            errors.append(f"workload: unknown source {w.source!r}")
         if w.L_in_min > w.L_in_max:
             errors.append(f"workload: L_in_min {w.L_in_min} > L_in_max {w.L_in_max}")
         if w.L_out_min > w.L_out_max:

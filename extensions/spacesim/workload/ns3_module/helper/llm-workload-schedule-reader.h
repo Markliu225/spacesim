@@ -1,11 +1,15 @@
 /*
  * LlmWorkloadScheduleReader — read llm_workload_schedule.csv.
  *
- * CSV row format (11 columns):
+ * Three column counts accepted:
  *
- *   src_gs_node_id,dst_compute_sat_node_id,lambda_req_per_sec,
- *   L_in_mean,L_in_std,L_in_min,L_in_max,bytes_per_token,packet_payload,
- *   start_time_ns,stop_time_ns
+ *   11 cols — legacy Phase B (no L_out distribution; defaults applied)
+ *   15 cols — Phase C distribution-driven workload
+ *   16 cols — same as 15 + trailing ``events_filename`` (relative to
+ *             run dir). When non-empty, the request app replays events
+ *             from this file instead of Poisson-sampling from the
+ *             distribution columns. The distribution fields are then
+ *             ignored except where noted.
  *
  * Lines beginning with '#' or empty lines are ignored.
  */
@@ -36,6 +40,10 @@ struct LlmWorkloadEntry {
     uint32_t packet_payload;
     int64_t start_time_ns;
     int64_t stop_time_ns;
+    // Optional: name of a per-GS events CSV (relative to the run dir).
+    // When non-empty the request app replays each row's t_emit_ns and
+    // L_in directly; the distribution fields above are ignored.
+    std::string events_filename;
 };
 
 std::vector<LlmWorkloadEntry> read_llm_workload_schedule(

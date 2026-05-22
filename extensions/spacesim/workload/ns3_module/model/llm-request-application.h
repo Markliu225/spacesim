@@ -50,8 +50,13 @@ private:
     void StartApplication() override;
     void StopApplication() override;
 
+    // Distribution-driven path:
     void ScheduleNext();
     void EmitRequest();
+
+    // Events-replay path:
+    void ScheduleEventsFromFile();
+    void EmitRequestWithLIn(uint32_t L_in);
 
     void OnConnectSuccess(Ptr<Socket> sock);
     void OnConnectFail   (Ptr<Socket> sock);
@@ -72,6 +77,9 @@ private:
     uint32_t    m_L_in_max;
     uint32_t    m_bytes_per_token;
     std::string m_response_log_filename;
+    // When non-empty, replay events from this file (path relative to
+    // ns-3's run dir). Distribution attributes above are ignored.
+    std::string m_events_filename;
 
     // state
     struct ReqConn {

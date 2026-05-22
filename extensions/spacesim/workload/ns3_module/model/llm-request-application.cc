@@ -1,8 +1,11 @@
 #include "ns3/llm-request-application.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstring>
+#include <fstream>
+#include <iostream>
 
 #include "ns3/log.h"
 #include "ns3/inet-socket-address.h"
@@ -70,6 +73,15 @@ LLMRequestApplication::GetTypeId(void)
                       "Path to llm_response_node<gs>.csv.",
                       StringValue(""),
                       MakeStringAccessor(&LLMRequestApplication::m_response_log_filename),
+                      MakeStringChecker())
+        .AddAttribute("EventsFilename",
+                      "Optional path to a per-GS events CSV "
+                      "(columns: req_id,src_gs_idx,t_emit_ns,L_in,L_out). "
+                      "When non-empty the app schedules each event at its "
+                      "t_emit_ns with the row's L_in, and the distribution "
+                      "attributes above are ignored.",
+                      StringValue(""),
+                      MakeStringAccessor(&LLMRequestApplication::m_events_filename),
                       MakeStringChecker());
     return tid;
 }
@@ -98,14 +110,7 @@ void
 LLMRequestApplication::StartApplication()
 {
     NS_LOG_FUNCTION(this);
-    if (m_lambda <= 0.0) NS_FATAL_ERROR("Lambda must be > 0");
     if (m_L_in_max < m_L_in_min) NS_FATAL_ERROR("LInMax < LInMin");
-
-    m_iat_rv = CreateObject<ExponentialRandomVariable>();
-    m_iat_rv->SetAttribute("Mean", DoubleValue(1.0 / m_lambda));
-    m_L_in_rv = CreateObject<NormalRandomVariable>();
-    m_L_in_rv->SetAttribute("Mean",     DoubleValue(m_L_in_mean));
-    m_L_in_rv->SetAttribute("Variance", DoubleValue(m_L_in_std * m_L_in_std));
 
     if (m_response_log_filename.empty()) {
         NS_FATAL_ERROR("LLMRequestApplication node " << GetNode()->GetId()
@@ -120,7 +125,72 @@ LLMRequestApplication::StartApplication()
            "t_response_emit_ns,t_response_recv_ns,network_return_delay_ns,"
            "src_compute_sat_id,L_in,L_out\n";
 
-    ScheduleNext();
+    if (!m_events_filename.empty()) {
+        // Trace-replay: schedule every event up-front from the file.
+        ScheduleEventsFromFile();
+    } else {
+        // Distribution-driven: lazy chain of Poisson inter-arrivals.
+        if (m_lambda <= 0.0) NS_FATAL_ERROR("Lambda must be > 0 in distribution mode");
+        m_iat_rv = CreateObject<ExponentialRandomVariable>();
+        m_iat_rv->SetAttribute("Mean", DoubleValue(1.0 / m_lambda));
+        m_L_in_rv = CreateObject<NormalRandomVariable>();
+        m_L_in_rv->SetAttribute("Mean",     DoubleValue(m_L_in_mean));
+        m_L_in_rv->SetAttribute("Variance", DoubleValue(m_L_in_std * m_L_in_std));
+        ScheduleNext();
+    }
+}
+
+void
+LLMRequestApplication::ScheduleEventsFromFile()
+{
+    // events CSV columns: req_id,src_gs_idx,t_emit_ns,L_in,L_out
+    // Path is relative to ns-3's run dir.
+    std::ifstream f(m_events_filename);
+    if (!f.is_open()) {
+        NS_FATAL_ERROR("LLMRequestApplication node " << GetNode()->GetId()
+                       << ": cannot open events file: " << m_events_filename);
+    }
+    std::string line;
+    bool first = true;
+    uint64_t scheduled = 0;
+    uint64_t skipped = 0;
+    uint64_t now_ns = (uint64_t) Simulator::Now().GetNanoSeconds();
+    while (std::getline(f, line)) {
+        if (line.empty()) continue;
+        if (first) {
+            // skip header (any line that starts with a non-digit char)
+            first = false;
+            if (!line.empty() && !std::isdigit((unsigned char) line[0])) continue;
+        }
+        // Parse req_id,src_gs_idx,t_emit_ns,L_in,L_out
+        size_t p0 = line.find(',');
+        size_t p1 = (p0 == std::string::npos) ? std::string::npos : line.find(',', p0 + 1);
+        size_t p2 = (p1 == std::string::npos) ? std::string::npos : line.find(',', p1 + 1);
+        size_t p3 = (p2 == std::string::npos) ? std::string::npos : line.find(',', p2 + 1);
+        if (p3 == std::string::npos) { ++skipped; continue; }
+        uint64_t t_emit_ns;
+        uint32_t L_in;
+        try {
+            t_emit_ns = std::stoull(line.substr(p1 + 1, p2 - p1 - 1));
+            L_in = (uint32_t) std::stoul(line.substr(p2 + 1, p3 - p2 - 1));
+        } catch (const std::exception &) {
+            ++skipped;
+            continue;
+        }
+        if (L_in < m_L_in_min) L_in = m_L_in_min;
+        if (L_in > m_L_in_max) L_in = m_L_in_max;
+        // Schedule relative to now. Drop events whose absolute time has
+        // already passed (only meaningful if StartTime was set after t=0).
+        if (t_emit_ns < now_ns) { ++skipped; continue; }
+        Simulator::Schedule(NanoSeconds(t_emit_ns - now_ns),
+                            &LLMRequestApplication::EmitRequestWithLIn,
+                            this, L_in);
+        ++scheduled;
+    }
+    std::cout << "  > LLMRequest node " << GetNode()->GetId()
+              << " replay: scheduled=" << scheduled
+              << " skipped=" << skipped
+              << " from " << m_events_filename << std::endl;
 }
 
 void
@@ -148,7 +218,13 @@ LLMRequestApplication::EmitRequest()
     if (L_in_sample < (double) m_L_in_min) L_in_sample = (double) m_L_in_min;
     if (L_in_sample > (double) m_L_in_max) L_in_sample = (double) m_L_in_max;
     uint32_t L_in = (uint32_t) std::lround(L_in_sample);
+    EmitRequestWithLIn(L_in);
+    ScheduleNext();
+}
 
+void
+LLMRequestApplication::EmitRequestWithLIn(uint32_t L_in)
+{
     uint64_t req_id = m_req_counter++;
     uint64_t t_emit_ns = (uint64_t) Simulator::Now().GetNanoSeconds();
 
@@ -186,8 +262,6 @@ LLMRequestApplication::EmitRequest()
 
     NS_LOG_INFO("EmitRequest node=" << GetNode()->GetId()
                 << " req=" << req_id << " L_in=" << L_in);
-
-    ScheduleNext();
 }
 
 void

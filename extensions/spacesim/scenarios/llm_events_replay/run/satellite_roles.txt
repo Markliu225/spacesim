@@ -1,0 +1,1 @@
+/home/mark/spacesim/hypatia/extensions/spacesim/scenarios/mixed_topology/satellite_roles.txt

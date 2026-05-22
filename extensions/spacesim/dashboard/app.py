@@ -48,6 +48,8 @@ import streamlit as st
 from spacesim.config.schema import ExperimentConfig
 from spacesim.workload.ns3_config import write_ns3_config
 from spacesim.workload.schedule import generate_schedule
+from spacesim.workload.events_replay import (discover_per_gs_files,
+                                             install_events_replay)
 from spacesim.topology.build import generate_topology
 from spacesim.analysis.lifecycle import (build_lifecycle_df,
                                          enumerate_partial_requests,
@@ -139,16 +141,67 @@ def _sidebar() -> None:
                 index=["top_5_cities", "top_20_cities", "top_100_cities"]
                 .index(w.gs_set),
             )
-            w.lambda_total = float(st.slider(
-                "Λ_total (req/s, summed across GS)", 1, 1000,
-                int(w.lambda_total), 1))
 
-            st.markdown("**L_in (prompt tokens)**")
-            cols = st.columns(4)
-            w.L_in_mean = float(cols[0].number_input("mean", value=float(w.L_in_mean), key="lin_mean"))
-            w.L_in_std  = float(cols[1].number_input("std",  value=float(w.L_in_std),  key="lin_std"))
-            w.L_in_min  = int(cols[2].number_input("min", value=int(w.L_in_min), step=1, key="lin_min"))
-            w.L_in_max  = int(cols[3].number_input("max", value=int(w.L_in_max), step=1, key="lin_max"))
+            source_options = ["synthetic", "trace_replay"]
+            source_labels = {
+                "synthetic": "Synthetic — Poisson(λ) + Normal(L_in)",
+                "trace_replay": "Trace replay — per-GS Azure events CSV",
+            }
+            w.source = st.radio(
+                "Workload source",
+                source_options,
+                index=source_options.index(w.source),
+                format_func=lambda s: source_labels[s],
+                help=("Synthetic samples request arrivals at ns-3 runtime. "
+                      "Trace replay schedules every arrival from a "
+                      "pre-generated per-GS events CSV."),
+            )
+
+            dst_options = ["first_compute", "per_gs_round_robin"]
+            w.dst_strategy = st.selectbox(
+                "GS → compute SAT routing",
+                dst_options,
+                index=dst_options.index(w.dst_strategy),
+            )
+
+            if w.source == "synthetic":
+                w.lambda_total = float(st.slider(
+                    "Λ_total (req/s, summed across GS)", 1, 1000,
+                    int(w.lambda_total), 1))
+
+                st.markdown("**L_in (prompt tokens)**")
+                cols = st.columns(4)
+                w.L_in_mean = float(cols[0].number_input("mean", value=float(w.L_in_mean), key="lin_mean"))
+                w.L_in_std  = float(cols[1].number_input("std",  value=float(w.L_in_std),  key="lin_std"))
+                w.L_in_min  = int(cols[2].number_input("min", value=int(w.L_in_min), step=1, key="lin_min"))
+                w.L_in_max  = int(cols[3].number_input("max", value=int(w.L_in_max), step=1, key="lin_max"))
+            else:
+                default_trace = str(
+                    _HYPATIA_ROOT / "extensions" / "traffic_generator"
+                    / "real_run" / "per_gs"
+                )
+                w.trace_per_gs_dir = st.text_input(
+                    "Per-GS events directory",
+                    value=w.trace_per_gs_dir or default_trace,
+                    help="Directory of events_gs<N>_<city>.csv files "
+                         "produced by traffic_generator/traffic_gen.py.",
+                )
+                w.trace_stage_mode = st.radio(
+                    "Stage events into run dir as",
+                    ["copy", "symlink"],
+                    index=["copy", "symlink"].index(w.trace_stage_mode),
+                    horizontal=True,
+                )
+                _render_trace_preview(w.trace_per_gs_dir)
+                st.caption("L_in is replayed from the trace; clamps below "
+                           "still apply.")
+                cols = st.columns(2)
+                w.L_in_min = int(cols[0].number_input(
+                    "L_in min (clamp)", value=int(w.L_in_min), step=1,
+                    key="lin_min_replay"))
+                w.L_in_max = int(cols[1].number_input(
+                    "L_in max (clamp)", value=int(w.L_in_max), step=1,
+                    key="lin_max_replay"))
 
             st.markdown("**L_out (response tokens)**")
             cols = st.columns(4)
@@ -247,6 +300,44 @@ def _sidebar() -> None:
                 for e in errs:
                     st.error(e)
         st.session_state["__run_clicked__"] = run_clicked
+
+
+def _render_trace_preview(trace_dir_str: str) -> None:
+    """Show a quick summary of an Azure-style per-GS events directory.
+
+    Counts files and totals events without parsing the whole CSV — uses
+    ``wc -l``-style line counts which are accurate enough for sanity
+    checks. Failures are surfaced as warnings, not errors, so the
+    sidebar still lets the user keep editing the path.
+    """
+    if not trace_dir_str:
+        st.caption("No directory chosen.")
+        return
+    p = Path(trace_dir_str).expanduser()
+    if not p.is_dir():
+        st.warning(f"not a directory: {p}")
+        return
+    try:
+        files = discover_per_gs_files(p)
+    except Exception as exc:
+        st.warning(f"trace dir lookup failed: {exc}")
+        return
+    rows = []
+    for gs_idx in sorted(files):
+        fp = files[gs_idx]
+        try:
+            with open(fp) as fh:
+                # Subtract 1 for header. Iterate in chunks to avoid loading
+                # all 600k+ rows for big traces.
+                n_rows = sum(1 for _ in fh) - 1
+                n_rows = max(n_rows, 0)
+        except OSError:
+            n_rows = -1
+        rows.append({"gs_idx": gs_idx, "file": fp.name, "events": n_rows})
+    df = pd.DataFrame(rows)
+    st.caption(f"Found **{len(df)}** per-GS files, "
+               f"**{int(df['events'].clip(lower=0).sum())}** total events.")
+    st.dataframe(df, use_container_width=True, hide_index=True)
 
 
 def _discover_run_dirs() -> list[Path]:
@@ -561,13 +652,31 @@ def _do_run_simulation() -> None:
 
         progress.info("Step 2/4 — writing schedule…")
         schedule_path = run_dir / "llm_workload_schedule.csv"
-        n_sched = generate_schedule(
-            cfg, schedule_path,
-            num_satellites=topo.num_satellites,
-            num_ground_stations=topo.num_ground_stations,
-            roles_path=topo.roles_path,
-        )
-        push(f"schedule: {n_sched} flows -> {schedule_path}")
+        w = cfg.workload
+        if w.source == "trace_replay":
+            push(f"workload source: trace_replay (dir={w.trace_per_gs_dir})")
+            n_sched = install_events_replay(
+                cfg,
+                per_gs_dir=Path(w.trace_per_gs_dir),
+                run_dir=run_dir,
+                num_satellites=topo.num_satellites,
+                roles_path=topo.roles_path,
+                dst_strategy=w.dst_strategy,
+                stage_mode=w.trace_stage_mode,
+                l_out_mean=w.L_out_mean, l_out_std=w.L_out_std,
+                l_out_min=w.L_out_min, l_out_max=w.L_out_max,
+            )
+            push(f"schedule (replay): {n_sched} GS -> {schedule_path}")
+        else:
+            push("workload source: synthetic")
+            n_sched = generate_schedule(
+                cfg, schedule_path,
+                num_satellites=topo.num_satellites,
+                num_ground_stations=topo.num_ground_stations,
+                roles_path=topo.roles_path,
+                dst_strategy=w.dst_strategy,
+            )
+            push(f"schedule: {n_sched} flows -> {schedule_path}")
 
         link = run_dir / "satellite_roles.txt"
         if link.exists() or link.is_symlink():

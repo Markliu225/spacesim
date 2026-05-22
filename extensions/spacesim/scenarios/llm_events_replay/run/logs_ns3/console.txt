@@ -1,0 +1,154 @@
+Waf: Entering directory `/home/mark/spacesim/hypatia/ns3-sat-sim/simulator/build/debug_all'
+Waf: Leaving directory `/home/mark/spacesim/hypatia/ns3-sat-sim/simulator/build/debug_all'
+Build commands will be stored in build/debug_all/compile_commands.json
+'build' finished successfully (0.708s)
+BASIC SIMULATION START
+  > Date... Friday May 22, 2026
+  > Time... 00:33:54
+
+CONFIGURE RUN DIRECTORY
+  > Run directory: /home/mark/spacesim/hypatia/extensions/spacesim/scenarios/llm_events_replay/run
+  > Logs directory: /home/mark/spacesim/hypatia/extensions/spacesim/scenarios/llm_events_replay/run/logs_ns3
+
+CONFIGURATION
+-----
+KEY                                       VALUE
+compute_alpha_ns_per_input_token          100000
+compute_beta_ns_per_output_token          50000
+compute_gamma_ns                          10000000
+dynamic_state_update_interval_ns          100000000
+enable_isl_utilization_tracking           false
+enable_llm_workload                       true
+enable_pingmesh_scheduler                 false
+enable_tcp_flow_scheduler                 false
+enable_udp_burst_scheduler                false
+gsl_data_rate_megabit_per_s               10.0
+gsl_max_queue_size_pkts                   100
+isl_data_rate_megabit_per_s               10.0
+isl_max_queue_size_pkts                   100
+llm_workload_log_filename                 llm.csv
+llm_workload_schedule_filename            llm_workload_schedule.csv
+satellite_network_dir                     ../gen_data/tiny_walker_1500_isls_plus_grid_5cities_algorithm_free_one_only_over_isls
+satellite_network_routes_dir              ../gen_data/tiny_walker_1500_isls_plus_grid_5cities_algorithm_free_one_only_over_isls/dynamic_state_100ms_for_5s
+simulation_end_time_ns                    5000000000
+simulation_seed                           246810
+tcp_socket_type                           TcpNewReno
+
+CONFIGURE SIMULATION
+  > Distributed is not enabled
+  > System id........ 0
+  > No. of systems... 1
+  > Seed............. 246810
+  > Duration......... 5.00 s (5000000000 ns)
+
+TCP OPTIMIZATION BASIC
+  > Clock granularity.......... 1 ns
+  > Initial CWND............... 10 packets
+  > Send buffer size........... 33.554 MB
+  > Receive buffer size........ 33.554 MB
+  > Segment size............... 1380 byte
+  > Timestamp option........... enabled
+  > SACK option................ enabled
+  > Window scaling option...... enabled
+  > Pacing..................... disabled
+
+SATELLITE NETWORK
+  > Number of satellites........ 60
+  > Number of ground stations... 5
+  > Compute SATs from satellite_roles.txt added as endpoints: 6
+  > Number of nodes............. 65
+  > Installed Internet stacks
+  > Reading and creating ISLs
+    >> ISL data rate........ 10 Mbit/s
+    >> ISL max queue size... 100 packets
+    >> Created 120 ISL(s)
+  > Creating GSLs
+    >> GSL data rate........ 10 Mbit/s
+    >> GSL max queue size... 100 packets
+    >> Read all GSL interfaces information for the 65 nodes
+    >> Number of GSL interfaces to create... 65
+    >> Finished install GSL interfaces (interfaces, network devices, one shared channel)
+    >> Finished installing traffic control layer qdisc which will be removed later
+    >> Assigning IP addresses...
+       (with many interfaces, this can take long due to an inefficient IP assignment conflict checker)
+       Progress (as there are more entries, it becomes slower):
+       - 10.77% (t = 0.00 s, update took 0.00 s)
+       - 21.54% (t = 0.00 s, update took 0.00 s)
+       - 32.31% (t = 0.00 s, update took 0.00 s)
+       - 43.08% (t = 0.00 s, update took 0.00 s)
+       - 53.85% (t = 0.00 s, update took 0.00 s)
+       - 64.62% (t = 0.00 s, update took 0.00 s)
+       - 75.38% (t = 0.00 s, update took 0.00 s)
+       - 86.15% (t = 0.01 s, update took 0.00 s)
+       - 96.92% (t = 0.01 s, update took 0.00 s)
+       - 100.00% (t = 0.01 s, update took 0.00 s)
+    >> Finished assigning IPs
+    >> Removing traffic control layers (qdiscs)...
+    >> Finished removing GSL queueing disciplines
+    >> GSL interfaces are setup
+  > Populating ARP caches
+
+SETUP SINGLE FORWARDING ROUTING
+  > Create initial single forwarding state
+  > Setting the routing arbiter on each node
+  > Forward state update interval: 100000000ns
+  > Perform first forwarding state load for t=0
+
+SETUP GSL IF BANDWIDTH HELPER
+  > GSL interface bandwidth update interval: 100000000ns
+  > Perform first GSL interface bandwidth setting for t=0
+
+TCP FLOW SCHEDULER
+  > Not enabled explicitly, so disabled
+
+UDP BURST SCHEDULER
+  > Not enabled explicitly, so disabled
+
+PINGMESH SCHEDULER
+  > Not enabled explicitly, so disabled
+
+LLM WORKLOAD SCHEDULER
+  > Transport: TCP, full request lifecycle (gather → compute → response)
+  > Read schedule (5 entries)
+  > Installed Gather+Compute on node 2 (alpha=100000ns/tok, beta=50000ns/tok, gamma=10000000ns)
+  > Installed Request (replay events/events_gs0_tokyo.csv) on node 60 -> 10.0.2.2:9999
+  > Installed Gather+Compute on node 12 (alpha=100000ns/tok, beta=50000ns/tok, gamma=10000000ns)
+  > Installed Request (replay events/events_gs1_delhi.csv) on node 61 -> 10.0.5.2:9999
+  > Installed Gather+Compute on node 22 (alpha=100000ns/tok, beta=50000ns/tok, gamma=10000000ns)
+  > Installed Request (replay events/events_gs2_shanghai.csv) on node 62 -> 10.0.25.2:9999
+  > Installed Gather+Compute on node 32 (alpha=100000ns/tok, beta=50000ns/tok, gamma=10000000ns)
+  > Installed Request (replay events/events_gs3_sao_paulo.csv) on node 63 -> 10.0.45.2:9999
+  > Installed Gather+Compute on node 42 (alpha=100000ns/tok, beta=50000ns/tok, gamma=10000000ns)
+  > Installed Request (replay events/events_gs4_mumbai.csv) on node 64 -> 10.0.65.2:9999
+SIMULATION
+Running the simulation for 5.00 simulation seconds...
+  > LLMRequest node 60 replay: scheduled=33 skipped=0 from /home/mark/spacesim/hypatia/extensions/spacesim/scenarios/llm_events_replay/run/events/events_gs0_tokyo.csv
+  > LLMRequest node 61 replay: scheduled=25 skipped=0 from /home/mark/spacesim/hypatia/extensions/spacesim/scenarios/llm_events_replay/run/events/events_gs1_delhi.csv
+  > LLMRequest node 62 replay: scheduled=42 skipped=0 from /home/mark/spacesim/hypatia/extensions/spacesim/scenarios/llm_events_replay/run/events/events_gs2_shanghai.csv
+  > LLMRequest node 63 replay: scheduled=56 skipped=0 from /home/mark/spacesim/hypatia/extensions/spacesim/scenarios/llm_events_replay/run/events/events_gs3_sao_paulo.csv
+  > LLMRequest node 64 replay: scheduled=38 skipped=0 from /home/mark/spacesim/hypatia/extensions/spacesim/scenarios/llm_events_replay/run/events/events_gs4_mumbai.csv
+Finished simulation.
+Simulation of 5.0 seconds took in wallclock time 0.9 seconds.
+
+STORE TCP FLOW RESULTS
+  > Not enabled, so no TCP flow results are written
+
+STORE UDP BURST RESULTS
+  > Not enabled, so no UDP burst results are written
+
+STORE PINGMESH RESULTS
+  > Not enabled, so no pingmesh results are written
+
+STORE LLM WORKLOAD RESULTS
+  > tx_request_count       = 194
+  > tx_request_packets     = 194
+  > rx_request_packets     = 184
+  > gather_complete_count  = 184
+  > gather_timeout_count   = 0  (TCP)
+  > compute_complete_count = 112
+  > response_recv_packets  = 224
+  > Wrote /home/mark/spacesim/hypatia/extensions/spacesim/scenarios/llm_events_replay/run/logs_ns3/llm_workload_summary.csv
+CLEAN-UP
+assert failed. cond="m_ptr", msg="Attempted to dereference zero pointer", file=./ns3/ptr.h, line=630
+terminate called without an active exception
+Command ['/home/mark/spacesim/hypatia/ns3-sat-sim/simulator/build/debug_all/scratch/main_satnet/main_satnet', '--run_dir=/home/mark/spacesim/hypatia/extensions/spacesim/scenarios/llm_events_replay/run'] terminated with signal SIGIOT. Run it under a debugger to get more information (./waf --run <program> --gdb").
