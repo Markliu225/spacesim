@@ -1,49 +1,56 @@
 /*
- * Tiny C++ test suite for llm-workload.
+ * llm-workload test suite (v2 — TCP only).
  *
- * Currently covers the LLMPacketTag round-trip (Serialize -> Deserialize
- * recovers the original fields). The end-to-end socket + Application
- * paths are exercised by the example and by Phase B's full run.
+ * Currently covers the LLMHeader pack/unpack round-trip — the one
+ * piece of fixed-format wire encoding that, if it breaks, silently
+ * corrupts every gather. The end-to-end socket + Application paths
+ * are exercised by examples/llm-workload-example.cc and by the
+ * integration scenarios.
  */
-
 #include "ns3/test.h"
-#include "ns3/llm-packet-tag.h"
+#include "ns3/llm-header.h"
 
 using namespace ns3;
 
-class LLMPacketTagRoundTrip : public TestCase {
+class LLMHeaderRoundTrip : public TestCase
+{
 public:
-    LLMPacketTagRoundTrip() : TestCase("LLMPacketTag Serialize/Deserialize roundtrip") {}
+    LLMHeaderRoundTrip()
+        : TestCase("LLMHeader pack/unpack roundtrip")
+    {}
+
 private:
-    void DoRun() override {
-        LLMPacketTag a(123456789ULL, 7, 42, 1234567890ULL,
-                       1584, 500, 0);
-        NS_TEST_ASSERT_MSG_EQ(a.GetSerializedSize(), 32u,
-                              "Serialized size must be 32 bytes");
+    void DoRun() override
+    {
+        LLMHeader a;
+        a.t_emit_ns   = 1234567890ULL;
+        a.req_id      = 42;
+        a.src_node_id = 1584;
+        a.L_in        = 500;
+        a.reserved    = 0;
 
-        // Round-trip via a 32-byte buffer.
-        uint8_t buf[32] = {};
-        TagBuffer tb_w(buf, buf + 32);
-        a.Serialize(tb_w);
-        TagBuffer tb_r(buf, buf + 32);
-        LLMPacketTag b;
-        b.Deserialize(tb_r);
+        uint8_t buf[LLMHeader::SIZE_BYTES];
+        std::size_t n = a.Pack(buf);
+        NS_TEST_ASSERT_MSG_EQ(n, LLMHeader::SIZE_BYTES, "Pack returns SIZE_BYTES");
 
-        NS_TEST_ASSERT_MSG_EQ(b.GetReqId(),         a.GetReqId(),         "req_id");
-        NS_TEST_ASSERT_MSG_EQ(b.GetPacketId(),      a.GetPacketId(),      "packet_id");
-        NS_TEST_ASSERT_MSG_EQ(b.GetTotalPkts(),     a.GetTotalPkts(),     "total_pkts");
-        NS_TEST_ASSERT_MSG_EQ(b.GetTEmitNs(),       a.GetTEmitNs(),       "t_emit_ns");
-        NS_TEST_ASSERT_MSG_EQ(b.GetSrcNodeId(),     a.GetSrcNodeId(),     "src_node_id");
-        NS_TEST_ASSERT_MSG_EQ(b.GetLIn(),           a.GetLIn(),           "L_in");
-        NS_TEST_ASSERT_MSG_EQ(b.GetLOutExpected(),  a.GetLOutExpected(),  "L_out_expected");
+        LLMHeader b;
+        std::size_t m = b.Unpack(buf);
+        NS_TEST_ASSERT_MSG_EQ(m, LLMHeader::SIZE_BYTES, "Unpack returns SIZE_BYTES");
+        NS_TEST_ASSERT_MSG_EQ(b.t_emit_ns,   a.t_emit_ns,   "t_emit_ns");
+        NS_TEST_ASSERT_MSG_EQ(b.req_id,      a.req_id,      "req_id");
+        NS_TEST_ASSERT_MSG_EQ(b.src_node_id, a.src_node_id, "src_node_id");
+        NS_TEST_ASSERT_MSG_EQ(b.L_in,        a.L_in,        "L_in");
+        NS_TEST_ASSERT_MSG_EQ(b.reserved,    a.reserved,    "reserved");
     }
 };
 
-class LlmWorkloadTestSuite : public TestSuite {
+class LlmWorkloadTestSuite : public TestSuite
+{
 public:
-    LlmWorkloadTestSuite() : TestSuite("llm-workload", UNIT) {
-        AddTestCase(new LLMPacketTagRoundTrip(), TestCase::QUICK);
+    LlmWorkloadTestSuite() : TestSuite("llm-workload", UNIT)
+    {
+        AddTestCase(new LLMHeaderRoundTrip, TestCase::QUICK);
     }
 };
 
-static LlmWorkloadTestSuite g_llm_workload_test_suite;
+static LlmWorkloadTestSuite g_llmWorkloadTestSuite;

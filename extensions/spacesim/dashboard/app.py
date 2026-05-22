@@ -21,41 +21,55 @@ useful with cached data.
 
 from __future__ import annotations
 
+import sys
 import time
 import traceback
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
+# --- Make the spacesim package importable ---------------------------------
+#
+# Streamlit launches this file as ``__main__`` from a CWD that may not
+# include the project root. We resolve relative to ``__file__`` and
+# prepend the ``extensions/`` dir so ``import spacesim.*`` works.
+
+_APP_FILE = Path(__file__).resolve()
+_SPACESIM_DIR = _APP_FILE.parent.parent                   # extensions/spacesim/
+_EXTENSIONS_DIR = _SPACESIM_DIR.parent                    # extensions/
+_HYPATIA_ROOT = _EXTENSIONS_DIR.parent                    # hypatia/
+if str(_EXTENSIONS_DIR) not in sys.path:
+    sys.path.insert(0, str(_EXTENSIONS_DIR))
+
 import numpy as np
 import pandas as pd
 import streamlit as st
 
-from config.schema import ExperimentConfig
-from generators.ns3_config import write_ns3_config
-from generators.schedule import generate_schedule
-from generators.topology import generate_topology
-from parsers.results import (build_lifecycle_df, enumerate_partial_requests,
-                             load_logs, load_summary, stage_means_ms,
-                             summarise)
-from runner.hypatia_runner import HypatiaRunner, RunResult
-from visualizations.breakdown import (plot_stage_breakdown,
-                                      plot_stage_percentiles)
-from visualizations.globe import make_globe_figure
-from visualizations.latency import plot_cdf, plot_histogram
+from spacesim.config.schema import ExperimentConfig
+from spacesim.workload.ns3_config import write_ns3_config
+from spacesim.workload.schedule import generate_schedule
+from spacesim.topology.build import generate_topology
+from spacesim.analysis.lifecycle import (build_lifecycle_df,
+                                         enumerate_partial_requests,
+                                         load_logs, load_summary,
+                                         stage_means_ms, summarise)
+from spacesim.runner.hypatia import HypatiaRunner, RunResult
+from spacesim.viz.breakdown import (plot_stage_breakdown,
+                                    plot_stage_percentiles)
+from spacesim.viz.globe import make_globe_figure
+from spacesim.viz.latency import plot_cdf, plot_histogram
 
 # --- Page setup ----------------------------------------------------------
 
 st.set_page_config(
-    page_title="LLM-on-satellite Dashboard",
+    page_title="spacesim — LLM-on-satellite simulator",
     page_icon=":satellite:",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
-DASHBOARD_DIR = Path(__file__).resolve().parent
-CACHE_DIR = DASHBOARD_DIR / "cache"
-RUNS_ROOT = DASHBOARD_DIR / "runs"
+CACHE_DIR = _SPACESIM_DIR / "cache"
+RUNS_ROOT = _SPACESIM_DIR / "runs"
 CACHE_DIR.mkdir(exist_ok=True)
 RUNS_ROOT.mkdir(exist_ok=True)
 
@@ -236,23 +250,37 @@ def _sidebar() -> None:
 
 
 def _discover_run_dirs() -> list[Path]:
+    """Find run dirs with parseable Phase-C-style llm logs.
+
+    Searches the package's own ``runs/`` plus any scenario-local
+    ``run/logs_ns3/`` directory. Both forms — top-level and scenario-
+    local — are picked up so the user can browse cached demos shipped
+    with the repo as well as freshly produced runs.
+    """
     candidates: list[Path] = []
     seen = set()
-    search_roots = [
-        DASHBOARD_DIR / "runs",
-        DASHBOARD_DIR.parent / "phase_c" / "runs",
-        DASHBOARD_DIR.parent / "phase_b" / "runs",
-    ]
+    search_roots: list[Path] = [RUNS_ROOT]
+    scenarios_dir = _SPACESIM_DIR / "scenarios"
+    if scenarios_dir.exists():
+        for scenario in scenarios_dir.iterdir():
+            run_dir = scenario / "run"
+            if run_dir.exists():
+                search_roots.append(run_dir)
     for root in search_roots:
         if not root.exists():
             continue
         for run in root.iterdir():
             logs = run / "logs_ns3"
-            if not logs.exists():
-                continue
-            if any(logs.glob("llm_gather_node*.csv")) and run not in seen:
-                candidates.append(run)
-                seen.add(run)
+            if logs.exists() and any(logs.glob("llm_gather_node*.csv")):
+                if run not in seen:
+                    candidates.append(run)
+                    seen.add(run)
+        # Also check root itself if it directly has logs_ns3/.
+        logs = root / "logs_ns3"
+        if logs.exists() and any(logs.glob("llm_gather_node*.csv")):
+            if root not in seen:
+                candidates.append(root)
+                seen.add(root)
     return sorted(candidates)
 
 
@@ -313,7 +341,7 @@ def _build_preview_globe(cfg: ExperimentConfig, *, show_isls: bool):
             z = z_inc
             pts[p * n_s + j] = (x, y, z)
 
-    from generators.topology import _assign_compute_planes
+    from spacesim.topology.build import _assign_compute_planes
     planes_C = set(_assign_compute_planes(n_p, shell.compute_ratio))
     roles = ["C" if (i // max(n_s, 1)) in planes_C else "T"
              for i in range(n_total)]
@@ -337,7 +365,7 @@ def _build_preview_globe(cfg: ExperimentConfig, *, show_isls: bool):
 @st.cache_data(show_spinner=False)
 def _load_gs_records(gs_set: str):
     src = (
-        DASHBOARD_DIR.parent.parent
+        _HYPATIA_ROOT
         / "paper" / "satellite_networks_state" / "input_data"
         / "ground_stations_cities_sorted_by_estimated_2025_pop_top_100.basic.txt"
     )

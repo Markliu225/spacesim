@@ -10,8 +10,8 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SIM="$HERE/../../ns3-sat-sim/simulator"
-SRC="$HERE/llm_workload"
+SIM="$HERE/../../../ns3-sat-sim/simulator"
+SRC="$HERE/ns3_module"
 DST="$SIM/src/llm-workload"
 VENV_BIN=/home/mark/spacesim/venv/bin
 

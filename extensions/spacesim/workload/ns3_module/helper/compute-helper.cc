@@ -1,5 +1,4 @@
 #include "ns3/compute-helper.h"
-#include "ns3/compute-application.h"
 
 namespace ns3 {
 
@@ -9,9 +8,9 @@ ComputeHelper::ComputeHelper()
 }
 
 void
-ComputeHelper::SetAttribute(const std::string &name, const AttributeValue &v)
+ComputeHelper::SetAttribute(const std::string &name, const AttributeValue &value)
 {
-    m_factory.Set(name, v);
+    m_factory.Set(name, value);
 }
 
 ApplicationContainer

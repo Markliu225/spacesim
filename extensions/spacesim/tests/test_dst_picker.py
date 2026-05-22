@@ -13,7 +13,7 @@ import sys
 
 import pytest
 
-import pick_dst_sat as pds
+from spacesim.topology import dst_picker as pds
 
 
 def test_read_roles(tmp_path):
@@ -36,7 +36,7 @@ def test_pick_is_deterministic_on_reduced_kuiper(tmp_path, reduced_kuiper_state)
 
     cmd = [
         sys.executable,
-        os.path.join(os.path.dirname(__file__), "..", "pick_dst_sat.py"),
+        os.path.join(os.path.dirname(__file__), "..", "topology", "dst_picker.py"),
         "--state-dir", reduced_kuiper_state,
         "--roles", str(roles_path),
         "--src-gs", "0",
@@ -62,7 +62,7 @@ def test_pick_returns_one_of_compute(tmp_path, reduced_kuiper_state):
     )
     cmd = [
         sys.executable,
-        os.path.join(os.path.dirname(__file__), "..", "pick_dst_sat.py"),
+        os.path.join(os.path.dirname(__file__), "..", "topology", "dst_picker.py"),
         "--state-dir", reduced_kuiper_state,
         "--roles", str(roles_path),
         "--src-gs", "0",

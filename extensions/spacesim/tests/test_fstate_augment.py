@@ -14,7 +14,7 @@ import os
 
 import pytest
 
-import augment_fstate as af
+from spacesim.topology import fstate_augment as af
 
 
 # ---- parse_dst_sats --------------------------------------------------------

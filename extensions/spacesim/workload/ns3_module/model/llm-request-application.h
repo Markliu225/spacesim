@@ -1,22 +1,33 @@
 /*
- * LLMRequestApplication — Phase B.
+ * LLMRequestApplication — TCP, GS side.
  *
- * Installed on a ground-station node. While alive, it generates LLM
- * requests according to a Poisson arrival process (ExponentialRandomVariable
- * with mean = 1 / lambda). For each request, the prompt-token count L_in
- * is sampled from a clipped Normal(mu, sigma) ∩ [L_in_min, L_in_max].
- * The request is then sliced into N_pkt = ceil(L_in * bytes_per_token /
- * packet_payload) UDP packets, each carrying an LLMPacketTag with the
- * request and packet identifiers.
+ * Generates LLM requests on a Poisson process. Each request opens a
+ * fresh TCP connection to the destination compute SAT and:
  *
- * Designed to be standalone-testable: see
- * examples/llm-workload-example.cc for a two-node P2P minimal harness.
+ *   1. sends a 24-byte LLMHeader (t_emit_ns / req_id / src_node_id / L_in)
+ *   2. sends L_in * BytesPerToken bytes of "prompt payload" (zeros)
+ *   3. ShutdownSend  → SAT side reads until EOF
+ *   4. continues to drain *response* bytes on the same socket
+ *   5. when the SAT half-closes (FIN observed), writes the response log
+ *
+ * Response-log compatibility
+ * --------------------------
+ *
+ * We emit *two* rows per request — response_pkt_id=0 (first byte) and
+ * response_pkt_id=1 (last byte) — so analysis/lifecycle.py's existing
+ * groupby(min/max of t_response_recv_ns) recovers TTFT / total-recv
+ * without parser changes.
  */
-#ifndef LLM_REQUEST_APPLICATION_H
-#define LLM_REQUEST_APPLICATION_H
+#ifndef SPACESIM_LLM_REQUEST_APPLICATION_H
+#define SPACESIM_LLM_REQUEST_APPLICATION_H
+
+#include <fstream>
+#include <map>
+#include <string>
 
 #include "ns3/application.h"
 #include "ns3/address.h"
+#include "ns3/event-id.h"
 #include "ns3/socket.h"
 #include "ns3/random-variable-stream.h"
 
@@ -26,7 +37,6 @@ class LLMRequestApplication : public Application
 {
 public:
     static TypeId GetTypeId(void);
-
     LLMRequestApplication();
     ~LLMRequestApplication() override;
 
@@ -43,34 +53,49 @@ private:
     void ScheduleNext();
     void EmitRequest();
 
-    // ---- configuration attributes ----
-    Address   m_dst_addr;       // includes port
-    uint16_t  m_dst_port;
-    double    m_lambda;         // requests per second
-    double    m_L_in_mean;
-    double    m_L_in_std;
-    uint32_t  m_L_in_min;
-    uint32_t  m_L_in_max;
-    // Phase C additions: L_out distribution for the response (sampled at
-    // request time so the compute SAT can plan its decode work and the
-    // response burst size is known at compute time).
-    double    m_L_out_mean;
-    double    m_L_out_std;
-    uint32_t  m_L_out_min;
-    uint32_t  m_L_out_max;
-    uint32_t  m_bytes_per_token;
-    uint32_t  m_packet_payload;
+    void OnConnectSuccess(Ptr<Socket> sock);
+    void OnConnectFail   (Ptr<Socket> sock);
+    void OnDataSent      (Ptr<Socket> sock, uint32_t txAvail);
+    void OnRecv          (Ptr<Socket> sock);
+    void OnClosedNormal  (Ptr<Socket> sock);
+    void OnClosedError   (Ptr<Socket> sock);
 
-    // ---- runtime state ----
-    Ptr<Socket>                       m_socket;
-    Ptr<ExponentialRandomVariable>    m_iat_rv;     // inter-arrival time
-    Ptr<NormalRandomVariable>         m_L_in_rv;
-    Ptr<NormalRandomVariable>         m_L_out_rv;   // Phase C
-    EventId                           m_next_event;
-    uint64_t                          m_req_counter;
-    uint64_t                          m_tx_pkt_count;
+    bool PumpSend(Ptr<Socket> sock);
+
+    // attributes
+    Address     m_dst_addr;
+    uint16_t    m_dst_port;
+    double      m_lambda;
+    double      m_L_in_mean;
+    double      m_L_in_std;
+    uint32_t    m_L_in_min;
+    uint32_t    m_L_in_max;
+    uint32_t    m_bytes_per_token;
+    std::string m_response_log_filename;
+
+    // state
+    struct ReqConn {
+        uint64_t req_id;
+        uint32_t L_in;
+        uint64_t t_emit_ns;
+        uint64_t total_send_bytes;
+        uint64_t bytes_sent;
+        bool     header_sent;
+        bool     finished_send;
+        uint64_t bytes_received;
+        uint64_t t_first_byte_ns;
+        uint64_t t_last_byte_ns;
+        bool     logged;
+    };
+    std::map<Ptr<Socket>, ReqConn>   m_conns;
+    Ptr<ExponentialRandomVariable>   m_iat_rv;
+    Ptr<NormalRandomVariable>        m_L_in_rv;
+    EventId                          m_next_event;
+    std::ofstream                    m_response_log;
+    uint64_t                         m_req_counter;
+    uint64_t                         m_tx_pkt_count;
 };
 
 } // namespace ns3
 
-#endif // LLM_REQUEST_APPLICATION_H
+#endif // SPACESIM_LLM_REQUEST_APPLICATION_H

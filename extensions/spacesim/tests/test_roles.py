@@ -6,7 +6,7 @@ import os
 
 import pytest
 
-import satellite_roles as sr
+from spacesim.topology import roles as sr
 
 
 # ---- assign_by_plane -------------------------------------------------------

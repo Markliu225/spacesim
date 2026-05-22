@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Pick a compute SAT geographically far from a given ground station, so the
-TCP flow in run_phase_a_experiment.sh exercises several ISL hops.
+TCP flow in the scenario run.sh exercises several ISL hops.
 
 Strategy: at the flow's start_time (1 s after epoch), use SGP-4 to find
 each compute sat's sub-satellite point, compute its great-circle
@@ -18,7 +18,7 @@ import os
 import sys
 
 _HERE = os.path.abspath(os.path.dirname(__file__))
-_SATGENPY_DIR = os.path.abspath(os.path.join(_HERE, "..", "..", "satgenpy"))
+_SATGENPY_DIR = os.path.abspath(os.path.join(_HERE, "..", "..", "..", "satgenpy"))
 if _SATGENPY_DIR not in sys.path:
     sys.path.insert(0, _SATGENPY_DIR)
 

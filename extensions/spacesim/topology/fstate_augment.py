@@ -85,7 +85,7 @@ import networkx as nx
 # --- Make satgen importable -------------------------------------------------
 
 _HERE = os.path.abspath(os.path.dirname(__file__))
-_SATGENPY_DIR = os.path.abspath(os.path.join(_HERE, "..", "..", "satgenpy"))
+_SATGENPY_DIR = os.path.abspath(os.path.join(_HERE, "..", "..", "..", "satgenpy"))
 if _SATGENPY_DIR not in sys.path:
     sys.path.insert(0, _SATGENPY_DIR)
 

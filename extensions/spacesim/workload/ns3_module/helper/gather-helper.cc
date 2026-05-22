@@ -1,5 +1,4 @@
 #include "ns3/gather-helper.h"
-#include "ns3/gather-application.h"
 
 namespace ns3 {
 
@@ -9,9 +8,9 @@ GatherHelper::GatherHelper()
 }
 
 void
-GatherHelper::SetAttribute(const std::string &name, const AttributeValue &v)
+GatherHelper::SetAttribute(const std::string &name, const AttributeValue &value)
 {
-    m_factory.Set(name, v);
+    m_factory.Set(name, value);
 }
 
 ApplicationContainer

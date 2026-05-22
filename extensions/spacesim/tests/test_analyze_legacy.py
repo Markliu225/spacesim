@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-import analyze_phase_a as ap
+from spacesim.analysis.legacy import analyze_phase_a as ap
 
 
 def test_trace_path_direct_neighbours():

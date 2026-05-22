@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Phase A test runner. Uses pytest in /home/mark/spacesim/venv.
+# spacesim test runner. Uses pytest in /home/mark/spacesim/venv.
 #
 # Usage:
 #   ./run_tests.sh                 — full suite (unit + integration + regression)

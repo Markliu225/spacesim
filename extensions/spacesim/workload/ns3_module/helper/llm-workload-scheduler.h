@@ -1,20 +1,22 @@
 /*
- * LlmWorkloadScheduler — Hypatia main_satnet integration class.
+ * LlmWorkloadScheduler — Hypatia main_satnet integration.
  *
- * Two modes, switched by the `enable_llm_response_loop` config flag:
+ * TCP-only design (v2). For each schedule entry it installs (once per
+ * dst compute SAT) a GatherApplication + ComputeApplication pair, and
+ * (per src GS) an LLMRequestApplication.
  *
- *   - Phase B mode (flag absent / false):
- *       Installs LLMRequestApplication on each src GS + LLMSinkApplication
- *       on each unique dst compute SAT. Compute SAT logs every packet.
+ * Wiring:
+ *   - GatherApp accepts incoming TCP connections, reconstructs the
+ *     request, then fires GatherCompleteCallback → ComputeApp.OnGatherComplete
+ *     (passing the live socket).
+ *   - ComputeApp samples L_out (Option B), queues, and after T_compute
+ *     sends the response payload on the same socket and ShutdownSend.
+ *   - LLMRequestApp on the GS half-receives the response on the same
+ *     socket, logs first/last byte times to llm_response_node<gs>.csv.
  *
- *   - Phase C mode (flag true):
- *       Installs LLMRequestApplication + LLMResponseSinkApplication on
- *       each src GS, and GatherApplication + ComputeApplication on each
- *       unique dst compute SAT. Gather → Compute is wired via callback;
- *       Compute → GS uses a GsIpLookup callback that walks the topology's
- *       NodeContainer.
- *
- * In either mode `enable_llm_workload` must be true.
+ * The v1 Phase-B "sink-only" mode is gone. `enable_llm_response_loop`
+ * is accepted in config for back-compat but ignored: the response loop
+ * is always on.
  */
 #ifndef LLM_WORKLOAD_SCHEDULER_H
 #define LLM_WORKLOAD_SCHEDULER_H
@@ -30,10 +32,8 @@
 
 #include "ns3/llm-workload-schedule-reader.h"
 #include "ns3/llm-request-application.h"
-#include "ns3/llm-sink-application.h"
 #include "ns3/gather-application.h"
 #include "ns3/compute-application.h"
-#include "ns3/llm-response-sink-application.h"
 
 namespace ns3 {
 
@@ -45,25 +45,18 @@ public:
     void WriteResults();
 
 private:
-    void InstallPhaseB();
-    void InstallPhaseC();
+    void InstallSchedule();
 
     Ptr<BasicSimulation>          m_basicSimulation;
     NodeContainer                 m_all_nodes;
     bool                          m_enabled;
-    bool                          m_response_loop;        // Phase C switch
     int64_t                       m_simulation_end_time_ns;
     std::vector<LlmWorkloadEntry> m_schedule;
     std::string                   m_log_filename_template;
 
-    // Phase B artefacts.
     std::vector<Ptr<LLMRequestApplication>>     m_request_apps;
-    std::map<int64_t, Ptr<LLMSinkApplication>>  m_sink_apps;
-
-    // Phase C artefacts.
     std::map<int64_t, Ptr<GatherApplication>>   m_gather_apps;
     std::map<int64_t, Ptr<ComputeApplication>>  m_compute_apps;
-    std::map<int64_t, Ptr<LLMResponseSinkApplication>> m_response_sink_apps;
 };
 
 } // namespace ns3

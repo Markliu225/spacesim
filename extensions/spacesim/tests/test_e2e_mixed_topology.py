@@ -20,8 +20,8 @@ import subprocess
 import pytest
 
 HERE = os.path.abspath(os.path.dirname(__file__))
-PHASE_A = os.path.abspath(os.path.join(HERE, ".."))
-SCENARIO = os.path.join(PHASE_A, "scenarios", "mixed_topology")
+SPACESIM = os.path.abspath(os.path.join(HERE, ".."))
+SCENARIO = os.path.join(SPACESIM, "scenarios", "mixed_topology")
 RUN_LOGS = os.path.join(SCENARIO, "run", "logs_ns3")
 NETWORK_NAME = "tiny_walker_1500_isls_plus_grid_5cities_algorithm_free_one_only_over_isls"
 

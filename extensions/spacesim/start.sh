@@ -8,7 +8,7 @@
 #   ./start.sh --help
 #
 # What it does:
-#   1. Locate the venv (`/home/mark/spacesim/venv`) and the dashboard dir
+#   1. Locate the venv (`/home/mark/spacesim/venv`) and the spacesim dir
 #      (this script's own dir).
 #   2. If `streamlit` isn't importable in the venv, run
 #      `pip install -r requirements.txt`.
@@ -61,7 +61,7 @@ done
 
 # ---------- locate things --------------------------------------------------
 
-DASHBOARD_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+SPACESIM_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 VENV_DIR="/home/mark/spacesim/venv"
 VENV_PY="$VENV_DIR/bin/python"
 VENV_PIP="$VENV_DIR/bin/pip"
@@ -78,19 +78,19 @@ EOF
     exit 1
 fi
 
-cd "$DASHBOARD_DIR"
+cd "$SPACESIM_DIR"
 
-echo "[dashboard] working dir : $DASHBOARD_DIR"
-echo "[dashboard] venv        : $VENV_DIR"
-echo "[dashboard] python      : $("$VENV_PY" --version 2>&1)"
+echo "[spacesim] working dir : $SPACESIM_DIR"
+echo "[spacesim] venv        : $VENV_DIR"
+echo "[spacesim] python      : $("$VENV_PY" --version 2>&1)"
 
 # ---------- ensure deps are installed --------------------------------------
 
 if ! "$VENV_PY" -c "import streamlit, plotly, pandas, numpy, yaml" 2>/dev/null; then
-    echo "[dashboard] streamlit / deps not found in venv — installing..."
-    "$VENV_PIP" install -r "$DASHBOARD_DIR/requirements.txt"
+    echo "[spacesim] streamlit / deps not found in venv — installing..."
+    "$VENV_PIP" install -r "$SPACESIM_DIR/requirements.txt"
 else
-    echo "[dashboard] deps OK"
+    echo "[spacesim] deps OK"
 fi
 
 # ---------- ensure port is free --------------------------------------------
@@ -114,10 +114,10 @@ fi
 # ---------- launch streamlit ----------------------------------------------
 
 URL="http://${ADDR/0.0.0.0/127.0.0.1}:${PORT}"
-echo "[dashboard] launching streamlit on $URL"
+echo "[spacesim] launching streamlit on $URL"
 
 # Streamlit writes logs to stderr; we keep them visible.
-"$VENV_STREAMLIT" run "$DASHBOARD_DIR/app.py" \
+"$VENV_STREAMLIT" run "$SPACESIM_DIR/dashboard/app.py" \
     --server.headless true \
     --server.address "$ADDR" \
     --server.port "$PORT" \
@@ -129,7 +129,7 @@ STREAMLIT_PID=$!
 cleanup() {
     if kill -0 "$STREAMLIT_PID" 2>/dev/null; then
         echo
-        echo "[dashboard] stopping streamlit (pid $STREAMLIT_PID)..."
+        echo "[spacesim] stopping streamlit (pid $STREAMLIT_PID)..."
         kill "$STREAMLIT_PID" 2>/dev/null || true
         wait "$STREAMLIT_PID" 2>/dev/null || true
     fi
@@ -147,7 +147,7 @@ try:
 except Exception:
     sys.exit(1)
 " 2>/dev/null; then
-        echo "[dashboard] health: 200 ok  (took ${i}s)"
+        echo "[spacesim] health: 200 ok  (took ${i}s)"
         echo
         echo "    Open: $URL"
         echo

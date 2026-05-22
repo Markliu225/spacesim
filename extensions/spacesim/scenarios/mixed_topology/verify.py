@@ -23,13 +23,14 @@ import sys
 from typing import Dict, List, Tuple
 
 HERE = os.path.abspath(os.path.dirname(__file__))
-PHASE_A = os.path.abspath(os.path.join(HERE, "..", ".."))
-HYPATIA_ROOT = os.path.abspath(os.path.join(PHASE_A, "..", ".."))
+SPACESIM = os.path.abspath(os.path.join(HERE, "..", ".."))
+EXTENSIONS = os.path.abspath(os.path.join(SPACESIM, ".."))
+HYPATIA_ROOT = os.path.abspath(os.path.join(EXTENSIONS, ".."))
 SATGENPY = os.path.join(HYPATIA_ROOT, "satgenpy")
-for _p in (PHASE_A, SATGENPY):
+for _p in (EXTENSIONS, SATGENPY):
     if _p not in sys.path:
         sys.path.insert(0, _p)
-import analyze_phase_a as ap  # reuse trace_path / read_fstate
+from spacesim.analysis.legacy import analyze_phase_a as ap  # trace_path / read_fstate
 from satgen.tles import read_tles
 from satgen.ground_stations import read_ground_stations_extended
 from satgen.distance_tools import (

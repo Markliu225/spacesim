@@ -1,26 +1,20 @@
-/*
- * LLMRequestHelper — thin install-on-node helper for LLMRequestApplication.
- *
- * Per-row of the schedule CSV the higher-level LlmWorkloadScheduler builds
- * one helper, sets all the LLM parameters, and Install()s the application
- * on the source GS node.
- */
-#ifndef LLM_REQUEST_HELPER_H
-#define LLM_REQUEST_HELPER_H
+#ifndef SPACESIM_LLM_REQUEST_HELPER_H
+#define SPACESIM_LLM_REQUEST_HELPER_H
 
-#include "ns3/address.h"
-#include "ns3/application-container.h"
-#include "ns3/node-container.h"
 #include "ns3/object-factory.h"
+#include "ns3/application-container.h"
+#include "ns3/node.h"
+#include "ns3/ipv4-address.h"
+
+#include "ns3/llm-request-application.h"
 
 namespace ns3 {
 
 class LLMRequestHelper
 {
 public:
-    LLMRequestHelper(Address dest_addr, uint16_t dest_port);
+    LLMRequestHelper(Ipv4Address dst_ip, uint16_t dst_port);
     void SetAttribute(const std::string &name, const AttributeValue &value);
-
     ApplicationContainer Install(Ptr<Node> node) const;
 
 private:
@@ -29,4 +23,4 @@ private:
 
 } // namespace ns3
 
-#endif // LLM_REQUEST_HELPER_H
+#endif

@@ -2,7 +2,7 @@
 
 def build(bld):
 
-    # Register 'llm-workload' module.
+    # Register the 'llm-workload' module (v2 — TCP only).
     # Dependencies:
     #   core / network / internet / applications  — base ns-3 stack
     #   basic-sim                                  — BasicSimulation, exp-util
@@ -12,41 +12,32 @@ def build(bld):
     )
 
     module.source = [
-        'model/llm-packet-tag.cc',
-        'model/llm-sink-application.cc',
+        # apps
         'model/llm-request-application.cc',
-        # Phase C additions:
         'model/gather-application.cc',
         'model/compute-application.cc',
-        'model/llm-response-sink-application.cc',
-
-        'helper/llm-sink-helper.cc',
+        # helpers
         'helper/llm-request-helper.cc',
-        'helper/llm-workload-schedule-reader.cc',
-        'helper/llm-workload-scheduler.cc',
-        # Phase C additions:
         'helper/gather-helper.cc',
         'helper/compute-helper.cc',
-        'helper/llm-response-sink-helper.cc',
+        'helper/llm-workload-schedule-reader.cc',
+        'helper/llm-workload-scheduler.cc',
     ]
 
     headers = bld(features='ns3header')
     headers.module = 'llm-workload'
     headers.source = [
-        'model/llm-packet-tag.h',
-        'model/llm-sink-application.h',
+        # apps + the LLMHeader in-payload struct
+        'model/llm-header.h',
         'model/llm-request-application.h',
         'model/gather-application.h',
         'model/compute-application.h',
-        'model/llm-response-sink-application.h',
-
-        'helper/llm-sink-helper.h',
+        # helpers
         'helper/llm-request-helper.h',
-        'helper/llm-workload-schedule-reader.h',
-        'helper/llm-workload-scheduler.h',
         'helper/gather-helper.h',
         'helper/compute-helper.h',
-        'helper/llm-response-sink-helper.h',
+        'helper/llm-workload-schedule-reader.h',
+        'helper/llm-workload-scheduler.h',
     ]
 
     module_test = bld.create_ns3_module_test_library('llm-workload')

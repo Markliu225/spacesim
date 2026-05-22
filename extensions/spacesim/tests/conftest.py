@@ -1,26 +1,15 @@
 """
-Pytest fixtures shared by the Phase A test suite.
+Pytest fixtures for the ``spacesim`` test suite.
 
-The phase_a/ modules import satgenpy (which lives at
-``hypatia/satgenpy``) and assume Python's working dir does *not* include
-their own directory by default. We fix both here so individual tests
-can simply ``import augment_fstate`` etc.
+Sets up ``sys.path`` so tests can import the package as
+``spacesim.*`` and provides the small set of shared fixtures: a real
+satgenpy state from the upstream Manila→Dalian integration test, a
+mutable copy for fstate-mutation tests, and a cached run dir for
+regression assertions.
 
-Fixtures
---------
-
-- ``reduced_kuiper_state``: path to the small (17 sat + 2 GS) state dir
-  produced by ``integration_tests/test_manila_dalian_over_kuiper``.
-  Tests that need a real satgenpy state without paying for a fresh
-  Starlink-550 generation rely on this.
-- ``reduced_kuiper_dyn``: the matching ``dynamic_state_100ms_for_200s/``
-  subdir, with the full set of 2000 fstate files.
-- ``tmp_dyn_dir``: a tmp_path-backed copy of just ``fstate_0.txt`` and
-  ``gsl_if_bandwidth_0.txt`` so tests that mutate fstate don't trample
-  the shared integration-test state.
-- ``phase_a_run_dir``: path to the Phase A ns-3 run dir
-  (``runs/gs0_to_compute_sat/``). Used by regression tests to assert the
-  cached flow completed.
+The fixtures are skip-not-fail: if the upstream integration test
+hasn't been run, the dependent tests skip instead of failing — the
+unit tests stay green on a fresh clone.
 """
 
 from __future__ import annotations
@@ -31,21 +20,32 @@ import sys
 
 import pytest
 
+# --- sys.path setup -------------------------------------------------------
+
 HERE = os.path.abspath(os.path.dirname(__file__))
-PHASE_A_DIR = os.path.abspath(os.path.join(HERE, ".."))
-HYPATIA_ROOT = os.path.abspath(os.path.join(PHASE_A_DIR, "..", ".."))
+SPACESIM_DIR = os.path.abspath(os.path.join(HERE, ".."))            # extensions/spacesim/
+EXTENSIONS_DIR = os.path.abspath(os.path.join(SPACESIM_DIR, ".."))   # extensions/
+HYPATIA_ROOT = os.path.abspath(os.path.join(EXTENSIONS_DIR, ".."))   # hypatia/
 SATGENPY_DIR = os.path.join(HYPATIA_ROOT, "satgenpy")
 
-# Put the phase_a/ scripts and satgenpy on sys.path so tests can import
-# them directly.
-for p in (PHASE_A_DIR, SATGENPY_DIR):
+# Prepend ``extensions/`` so ``import spacesim.topology.roles`` works,
+# and satgenpy so the topology helpers can import satgen.* directly.
+for p in (EXTENSIONS_DIR, SATGENPY_DIR):
     if p not in sys.path:
         sys.path.insert(0, p)
 
 
+# --- Shared fixtures ------------------------------------------------------
+
+
 @pytest.fixture(scope="session")
 def reduced_kuiper_state() -> str:
-    """Path to the integration-test's reduced Kuiper-630 state dir."""
+    """Path to the upstream integration test's reduced Kuiper-630 state dir.
+
+    The state has 17 satellites + 2 ground stations (Manila, Dalian) —
+    small enough for fast SGP-4 calls in tests, large enough to exercise
+    real ISL graph + GSL lookup paths.
+    """
     path = os.path.join(
         HYPATIA_ROOT,
         "integration_tests",
@@ -56,15 +56,15 @@ def reduced_kuiper_state() -> str:
     )
     if not os.path.isdir(path):
         pytest.skip(
-            f"reduced Kuiper state not found at {path} -- run the "
-            f"integration test (bash hypatia_run_tests.sh) first"
+            f"reduced Kuiper state not found at {path} -- "
+            f"run `bash hypatia_run_tests.sh` first"
         )
     return path
 
 
 @pytest.fixture(scope="session")
 def reduced_kuiper_dyn(reduced_kuiper_state: str) -> str:
-    """Path to dynamic_state_100ms_for_200s under the reduced Kuiper state."""
+    """Path to ``dynamic_state_100ms_for_200s/`` under the reduced Kuiper state."""
     path = os.path.join(reduced_kuiper_state, "dynamic_state_100ms_for_200s")
     if not os.path.isdir(path):
         pytest.skip(f"dynamic_state dir missing under {reduced_kuiper_state}")
@@ -73,9 +73,10 @@ def reduced_kuiper_dyn(reduced_kuiper_state: str) -> str:
 
 @pytest.fixture
 def tmp_dyn_dir(tmp_path, reduced_kuiper_dyn: str) -> str:
-    """Tmp dir holding fstate_0.txt + gsl_if_bandwidth_0.txt copied from
-    the reduced Kuiper state. Tests mutate this freely without affecting
-    the shared integration-test artefacts.
+    """Tmp dir with fstate_0 + gsl_if_bandwidth_0 copied from the reduced state.
+
+    Use this whenever a test mutates fstate so the shared integration-test
+    artefacts stay untouched.
     """
     dst = tmp_path / "dyn"
     dst.mkdir()
@@ -86,5 +87,12 @@ def tmp_dyn_dir(tmp_path, reduced_kuiper_dyn: str) -> str:
 
 @pytest.fixture(scope="session")
 def phase_a_run_dir() -> str:
-    """Path to the cached Phase A run output."""
-    return os.path.join(PHASE_A_DIR, "runs", "gs0_to_compute_sat")
+    """Path to the cached Tokyo→SAT-894 run output.
+
+    Used by the regression tests to assert that the canonical "the
+    runtime pipeline still produces a valid lifecycle" run is
+    untouched. The fixture name is historical (originated as a Phase A
+    artefact); the underlying directory now lives under
+    ``spacesim/runs/tokyo_to_sat894``.
+    """
+    return os.path.join(SPACESIM_DIR, "runs", "tokyo_to_sat894")

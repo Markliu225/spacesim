@@ -46,23 +46,30 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Dict, List, Optional
 
-# --- Make satgenpy importable ----------------------------------------------
+# --- Path setup ------------------------------------------------------------
+#
+# This file lives at ``extensions/spacesim/topology/build.py``. Two
+# locations matter:
+#   - upstream Hypatia's ``satgenpy/`` (importable as ``satgen.*``)
+#   - the sibling ``fstate_augment.py`` invoked as a subprocess after
+#     state generation, so SAT-dst routes get appended to every
+#     ``fstate_<t>.txt``.
 
-_DASHBOARD_DIR = Path(__file__).resolve().parent.parent
-_HYPATIA_ROOT = _DASHBOARD_DIR.parent.parent
+_THIS_FILE = Path(__file__).resolve()
+_SPACESIM_DIR = _THIS_FILE.parent.parent                 # extensions/spacesim/
+_HYPATIA_ROOT = _SPACESIM_DIR.parent.parent              # hypatia/
 _SATGENPY_DIR = _HYPATIA_ROOT / "satgenpy"
-_PHASE_A_DIR = _HYPATIA_ROOT / "extensions" / "phase_a"
 _PAPER_INPUT_DATA = _HYPATIA_ROOT / "paper" / "satellite_networks_state" / "input_data"
+_FSTATE_AUGMENT_SCRIPT = _SPACESIM_DIR / "topology" / "fstate_augment.py"
 
-for p in (_SATGENPY_DIR, _PHASE_A_DIR):
-    if str(p) not in sys.path:
-        sys.path.insert(0, str(p))
+if str(_SATGENPY_DIR) not in sys.path:
+    sys.path.insert(0, str(_SATGENPY_DIR))
 
 import satgen  # noqa: E402
 
-# Phase A's role generator. We import it but pass our own params instead
-# of going through its CLI.
-import satellite_roles as phase_a_roles  # noqa: E402
+# Sibling module — same package — used here for its by-plane role
+# assignment helpers (not via subprocess).
+from . import roles as _roles_mod  # noqa: E402
 
 
 # --- Public types ----------------------------------------------------------
@@ -184,12 +191,12 @@ def _write_roles(
     output_path: Path, total_sats: int, sats_per_plane: int, compute_planes: List[int]
 ) -> int:
     """Write satellite_roles.txt; returns count of compute sats."""
-    roles = phase_a_roles.assign_by_plane(
+    roles = _roles_mod.assign_by_plane(
         sats_per_plane=sats_per_plane,
         num_planes=total_sats // sats_per_plane,
         planes=compute_planes,
     )
-    phase_a_roles.write_roles(str(output_path), roles)
+    _roles_mod.write_roles(str(output_path), roles)
     return roles.count("C")
 
 
@@ -199,18 +206,21 @@ def _run_augment_fstate(
     roles_path: Path,
     on_progress: ProgressFn,
 ) -> None:
-    """Invoke phase_a/augment_fstate.py via subprocess.
+    """Invoke ``topology/fstate_augment.py`` via subprocess.
 
     Adds SAT-dst forwarding rows for every type=C satellite to every
-    fstate_<t>.txt in ``dynamic_state_dir``. Uses the role file to drive
-    ``--dst-sats=all-compute``.
+    ``fstate_<t>.txt`` in ``dynamic_state_dir``. Uses the role file to
+    drive ``--dst-sats=all-compute``.
 
-    Subprocess (not import) so phase_a stays a peer module not an
-    implementation dependency.
+    Subprocess (not import) because (a) ``fstate_augment`` rebuilds the
+    satgenpy graph from scratch every call and that's expensive and
+    deserves its own process, (b) it then writes its own SAT-dst rows
+    to fstate files which is side-effect-heavy and easier to isolate
+    from this driver.
     """
     cmd = [
         sys.executable,
-        str(_PHASE_A_DIR / "augment_fstate.py"),
+        str(_FSTATE_AUGMENT_SCRIPT),
         "--state-dir", str(state_dir),
         "--dynamic-state-dir", str(dynamic_state_dir),
         "--dst-sats", "all-compute",
