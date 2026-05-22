@@ -40,7 +40,10 @@ class ShellConfig:
     phase_offset: int = 0
     min_elevation_deg: float = 25.0
     isl_pattern: Literal["+Grid"] = "+Grid"
-    compute_ratio: float = 0.10  # fraction in (0, 1]
+    # Fraction of satellites tagged as compute (C). With 10 planes and
+    # the default plane-based assignment, 0.20 → 2 compute planes (20
+    # compute SATs), enough to absorb a 5-GS trace without queue runaway.
+    compute_ratio: float = 0.20  # fraction in (0, 1]
 
     @property
     def total_sats(self) -> int:
@@ -85,8 +88,13 @@ class WorkloadConfig:
     trace_per_gs_dir: str = ""
     # How to stage the events files into the run dir.
     trace_stage_mode: Literal["copy", "symlink"] = "copy"
-    # GS → compute-SAT routing policy (both modes).
-    dst_strategy: Literal["first_compute", "per_gs_round_robin"] = "first_compute"
+    # Where in the trace to start. The trace covers e.g. 24h; the sim
+    # only runs `duration_seconds`. Setting offset=50400 (14:00) replays
+    # the local-afternoon-peak slice. Default 0 = trace beginning.
+    trace_start_offset_sec: float = 0.0
+    # GS → compute-SAT routing policy. Defaults to round-robin so a
+    # trace with many GS doesn't queue up on a single compute SAT.
+    dst_strategy: Literal["first_compute", "per_gs_round_robin"] = "per_gs_round_robin"
 
     lambda_total: float = 10.0  # requests / second, summed across GS
     L_in_mean: float = 500.0    # prompt tokens

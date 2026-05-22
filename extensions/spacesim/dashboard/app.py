@@ -136,32 +136,29 @@ def _sidebar() -> None:
         with st.expander("Ground traffic", expanded=False):
             w = cfg.workload
             w.gs_set = st.selectbox(
-                "GS set",
+                "GS set (which cities the topology will place)",
                 ["top_5_cities", "top_20_cities", "top_100_cities"],
                 index=["top_5_cities", "top_20_cities", "top_100_cities"]
                 .index(w.gs_set),
+                help="The first N cities of Hypatia's top-100 file. "
+                     "The traffic_generator's events files use the same "
+                     "ordering (Tokyo, Delhi, …) — GS set ≥ trace's file "
+                     "count is required so every event has a valid GS.",
             )
 
             source_options = ["synthetic", "trace_replay"]
             source_labels = {
                 "synthetic": "Synthetic — Poisson(λ) + Normal(L_in)",
-                "trace_replay": "Trace replay — per-GS Azure events CSV",
+                "trace_replay": "Trace replay — per-GS events CSV",
             }
             w.source = st.radio(
                 "Workload source",
                 source_options,
                 index=source_options.index(w.source),
                 format_func=lambda s: source_labels[s],
-                help=("Synthetic samples request arrivals at ns-3 runtime. "
-                      "Trace replay schedules every arrival from a "
-                      "pre-generated per-GS events CSV."),
-            )
-
-            dst_options = ["first_compute", "per_gs_round_robin"]
-            w.dst_strategy = st.selectbox(
-                "GS → compute SAT routing",
-                dst_options,
-                index=dst_options.index(w.dst_strategy),
+                help="Synthetic samples arrivals at ns-3 runtime. "
+                     "Trace replay reads them from per-GS event CSVs "
+                     "produced by extensions/traffic_generator/traffic_gen.py.",
             )
 
             if w.source == "synthetic":
@@ -175,7 +172,15 @@ def _sidebar() -> None:
                 w.L_in_std  = float(cols[1].number_input("std",  value=float(w.L_in_std),  key="lin_std"))
                 w.L_in_min  = int(cols[2].number_input("min", value=int(w.L_in_min), step=1, key="lin_min"))
                 w.L_in_max  = int(cols[3].number_input("max", value=int(w.L_in_max), step=1, key="lin_max"))
+
+                st.markdown("**L_out (response tokens)**")
+                cols = st.columns(4)
+                w.L_out_mean = float(cols[0].number_input("mean", value=float(w.L_out_mean), key="lout_mean"))
+                w.L_out_std  = float(cols[1].number_input("std",  value=float(w.L_out_std),  key="lout_std"))
+                w.L_out_min  = int(cols[2].number_input("min", value=int(w.L_out_min), step=1, key="lout_min"))
+                w.L_out_max  = int(cols[3].number_input("max", value=int(w.L_out_max), step=1, key="lout_max"))
             else:
+                # ─── trace_replay — minimal surface area ───────────
                 default_trace = str(
                     _HYPATIA_ROOT / "extensions" / "traffic_generator"
                     / "real_run" / "per_gs"
@@ -184,37 +189,71 @@ def _sidebar() -> None:
                     "Per-GS events directory",
                     value=w.trace_per_gs_dir or default_trace,
                     help="Directory of events_gs<N>_<city>.csv files "
-                         "produced by traffic_generator/traffic_gen.py.",
-                )
-                w.trace_stage_mode = st.radio(
-                    "Stage events into run dir as",
-                    ["copy", "symlink"],
-                    index=["copy", "symlink"].index(w.trace_stage_mode),
-                    horizontal=True,
+                         "(traffic_generator/traffic_gen.py output). The "
+                         "GS list and lat/lon come from Hypatia's top-100 "
+                         "file — the first N cities must match this "
+                         "trace's GS list.",
                 )
                 _render_trace_preview(w.trace_per_gs_dir)
-                st.caption("L_in is replayed from the trace; clamps below "
-                           "still apply.")
+                _render_trace_fit_check(
+                    w.trace_per_gs_dir,
+                    cfg.simulation.duration_seconds,
+                    w.trace_start_offset_sec,
+                )
+                # Offset slider — let user pick which slice of the trace
+                # to simulate without regenerating the trace.
+                w.trace_start_offset_sec = float(st.number_input(
+                    "Trace start offset (sec from trace t=0)",
+                    min_value=0.0, value=float(w.trace_start_offset_sec),
+                    step=3600.0,
+                    help="Trace is typically 24h. Sim only runs "
+                         "`duration_seconds`. Set offset=50400 (14:00 UTC) "
+                         "to simulate the afternoon-peak slice. 0 = "
+                         "start at the trace's beginning.",
+                ))
+
+            with st.expander("Advanced (rarely needed)", expanded=False):
+                dst_options = ["first_compute", "per_gs_round_robin"]
+                w.dst_strategy = st.selectbox(
+                    "GS → compute SAT routing",
+                    dst_options,
+                    index=dst_options.index(w.dst_strategy),
+                    help="per_gs_round_robin spreads GS across compute "
+                         "SATs; first_compute funnels everything to one. "
+                         "Use first_compute only when you want to "
+                         "exercise queue behaviour deliberately.",
+                )
+                if w.source == "trace_replay":
+                    w.trace_stage_mode = st.radio(
+                        "Stage events into run dir as",
+                        ["copy", "symlink"],
+                        index=["copy", "symlink"].index(w.trace_stage_mode),
+                        horizontal=True,
+                    )
+                    st.caption("L_in is replayed from the trace; clamps "
+                               "below still apply.")
+                    cols = st.columns(2)
+                    w.L_in_min = int(cols[0].number_input(
+                        "L_in min (clamp)", value=int(w.L_in_min), step=1,
+                        key="lin_min_replay"))
+                    w.L_in_max = int(cols[1].number_input(
+                        "L_in max (clamp)", value=int(w.L_in_max), step=1,
+                        key="lin_max_replay"))
+
+                    st.markdown("**L_out distribution (ns-3 samples from "
+                                "this; the trace's L_out is currently "
+                                "ignored — see roadmap)**")
+                    cols = st.columns(4)
+                    w.L_out_mean = float(cols[0].number_input("mean", value=float(w.L_out_mean), key="lout_mean_r"))
+                    w.L_out_std  = float(cols[1].number_input("std",  value=float(w.L_out_std),  key="lout_std_r"))
+                    w.L_out_min  = int(cols[2].number_input("min", value=int(w.L_out_min), step=1, key="lout_min_r"))
+                    w.L_out_max  = int(cols[3].number_input("max", value=int(w.L_out_max), step=1, key="lout_max_r"))
+
                 cols = st.columns(2)
-                w.L_in_min = int(cols[0].number_input(
-                    "L_in min (clamp)", value=int(w.L_in_min), step=1,
-                    key="lin_min_replay"))
-                w.L_in_max = int(cols[1].number_input(
-                    "L_in max (clamp)", value=int(w.L_in_max), step=1,
-                    key="lin_max_replay"))
-
-            st.markdown("**L_out (response tokens)**")
-            cols = st.columns(4)
-            w.L_out_mean = float(cols[0].number_input("mean", value=float(w.L_out_mean), key="lout_mean"))
-            w.L_out_std  = float(cols[1].number_input("std",  value=float(w.L_out_std),  key="lout_std"))
-            w.L_out_min  = int(cols[2].number_input("min", value=int(w.L_out_min), step=1, key="lout_min"))
-            w.L_out_max  = int(cols[3].number_input("max", value=int(w.L_out_max), step=1, key="lout_max"))
-
-            cols = st.columns(2)
-            w.bytes_per_token = int(cols[0].number_input(
-                "bytes/token", min_value=1, value=int(w.bytes_per_token)))
-            w.packet_payload = int(cols[1].number_input(
-                "packet payload", min_value=64, value=int(w.packet_payload)))
+                w.bytes_per_token = int(cols[0].number_input(
+                    "bytes/token", min_value=1, value=int(w.bytes_per_token)))
+                w.packet_payload = int(cols[1].number_input(
+                    "packet payload", min_value=64, value=int(w.packet_payload)))
 
         with st.expander("Compute model", expanded=False):
             c = cfg.compute
@@ -300,6 +339,66 @@ def _sidebar() -> None:
                 for e in errs:
                     st.error(e)
         st.session_state["__run_clicked__"] = run_clicked
+
+
+def _render_trace_fit_check(trace_dir_str: str, sim_duration_sec: int,
+                            trace_start_offset_sec: float) -> None:
+    """Show how many trace events will actually fire in the sim window.
+
+    This is the single most important sanity check for trace_replay: the
+    trace typically covers 24h but the sim only runs N seconds. Without
+    this widget users see "tx_request_count=1076" against "expected
+    millions" and assume the simulator silently skipped work.
+    """
+    if not trace_dir_str:
+        return
+    p = Path(trace_dir_str).expanduser()
+    if not p.is_dir():
+        return
+    try:
+        files = discover_per_gs_files(p)
+    except Exception:
+        return
+    sim_dur_ns = int(sim_duration_sec) * 1_000_000_000
+    offset_ns = int(round(trace_start_offset_sec * 1_000_000_000))
+    lo, hi = offset_ns, offset_ns + sim_dur_ns
+    n_total = 0
+    n_kept = 0
+    trace_max = 0
+    for gs_idx, fp in files.items():
+        try:
+            df = pd.read_csv(fp, usecols=["t_emit_ns"])
+        except Exception:
+            continue
+        n_total += len(df)
+        t = df["t_emit_ns"].to_numpy()
+        n_kept += int(((t >= lo) & (t < hi)).sum())
+        if len(t):
+            trace_max = max(trace_max, int(t.max()))
+    if n_total == 0:
+        return
+    frac = 100.0 * n_kept / n_total if n_total else 0.0
+    arrival_rate = n_kept / max(sim_duration_sec, 1)
+    span_h = trace_max / 3.6e12
+    if n_kept == 0:
+        st.error(
+            f"⚠ Sim window [{trace_start_offset_sec:.0f}s, "
+            f"{trace_start_offset_sec + sim_duration_sec:.0f}s] is "
+            f"outside the trace's coverage (trace ends at "
+            f"{trace_max/1e9:.0f}s ≈ {span_h:.1f}h). "
+            f"Either lower the offset or regenerate a longer trace."
+        )
+    else:
+        msg = (f"Trace covers ~{span_h:.1f}h. Sim window will fire "
+               f"**{n_kept:,}** of {n_total:,} events ({frac:.3f}%), "
+               f"avg **{arrival_rate:.1f} req/s** across "
+               f"{len(files)} GS.")
+        if frac < 5.0:
+            st.warning(msg + " Most of the trace will be ignored — "
+                       "consider increasing `duration_seconds` or "
+                       "regenerating a shorter trace.")
+        else:
+            st.info(msg)
 
 
 def _render_trace_preview(trace_dir_str: str) -> None:
@@ -655,18 +754,29 @@ def _do_run_simulation() -> None:
         w = cfg.workload
         if w.source == "trace_replay":
             push(f"workload source: trace_replay (dir={w.trace_per_gs_dir})")
-            n_sched = install_events_replay(
+            summary = install_events_replay(
                 cfg,
                 per_gs_dir=Path(w.trace_per_gs_dir),
                 run_dir=run_dir,
                 num_satellites=topo.num_satellites,
+                num_ground_stations=topo.num_ground_stations,
                 roles_path=topo.roles_path,
                 dst_strategy=w.dst_strategy,
                 stage_mode=w.trace_stage_mode,
                 l_out_mean=w.L_out_mean, l_out_std=w.L_out_std,
                 l_out_min=w.L_out_min, l_out_max=w.L_out_max,
+                trace_start_offset_sec=w.trace_start_offset_sec,
+                on_log=push,
             )
+            n_sched = summary["rows"]
             push(f"schedule (replay): {n_sched} GS -> {schedule_path}")
+            if summary["events_kept"] == 0:
+                raise RuntimeError(
+                    f"events_replay produced 0 events in the sim window. "
+                    f"trace covers {summary['trace_span_sec']:.0f}s but "
+                    f"sim window is [{w.trace_start_offset_sec:.0f}s, "
+                    f"{w.trace_start_offset_sec + cfg.simulation.duration_seconds:.0f}s]."
+                )
         else:
             push("workload source: synthetic")
             n_sched = generate_schedule(
@@ -702,16 +812,31 @@ def _do_run_simulation() -> None:
         for line in runner.consume_new_lines():
             push(line)
         result = runner.finalise()
+        # ns-3 has a known cosmetic null-Ptr crash at clean-up time
+        # (SIGIOT after `STORE LLM WORKLOAD RESULTS`). The summary CSV
+        # and per-stage logs are flushed *before* the crash, so a
+        # non-zero returncode with a real summary file means the data
+        # is intact. Treat that as a success and surface a warning.
+        summary_path = run_dir / "logs_ns3" / "llm_workload_summary.csv"
+        results_intact = summary_path.exists() and summary_path.stat().st_size > 0
+        if results_intact and not result.success:
+            push(f"note: rc={result.returncode} but summary CSV exists "
+                 f"— treating as success (ns-3 cleanup crash is cosmetic).")
         st.session_state.last_result = result
         st.session_state.last_run_dir = run_dir
         progress.empty()
-        if result.success:
-            st.success(f"Simulation completed in {result.duration_seconds:.1f}s. "
-                       "See the *Results* tab.")
-        elif result.timed_out:
+        if result.timed_out:
             st.error(f"Simulation timed out after {result.duration_seconds:.1f}s.")
+        elif result.success or results_intact:
+            msg = (f"Simulation completed in {result.duration_seconds:.1f}s. "
+                   "See the *Results* tab.")
+            if not result.success:
+                msg += (f"  (ns-3 returned rc={result.returncode} at "
+                        "cleanup; results CSVs are intact.)")
+            st.success(msg)
         else:
-            st.error(f"Simulation failed (rc={result.returncode}). See *Logs* tab.")
+            st.error(f"Simulation failed (rc={result.returncode}). "
+                     "See *Logs* tab.")
     except Exception as exc:
         progress.empty()
         push(f"[ERROR] {exc}")
