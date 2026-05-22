@@ -1,0 +1,1 @@
+req_id,gs_node_id,response_pkt_id,total_response_pkts,t_response_emit_ns,t_response_recv_ns,network_return_delay_ns,src_compute_sat_id,L_in,L_out

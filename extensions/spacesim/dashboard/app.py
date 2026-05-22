@@ -82,6 +82,21 @@ RUNS_ROOT.mkdir(exist_ok=True)
 def _init_session() -> None:
     if "config" not in st.session_state:
         st.session_state.config = ExperimentConfig()
+    else:
+        # Upgrade old sessions: if WorkloadConfig was created before the
+        # trace_replay fields existed, its attributes default to the
+        # dataclass's current defaults via __init__, but a stored
+        # instance that predates a default change will keep the OLD
+        # value. Force a few critical defaults that we changed recently.
+        cfg = st.session_state.config
+        # Was: first_compute. New default per_gs_round_robin (avoid
+        # queue saturation by funnelling everything to SAT 0).
+        if getattr(cfg.workload, "dst_strategy", None) not in (
+            "first_compute", "per_gs_round_robin"
+        ):
+            cfg.workload.dst_strategy = "per_gs_round_robin"
+        if not hasattr(cfg.workload, "trace_start_offset_sec"):
+            cfg.workload.trace_start_offset_sec = 0.0
     if "last_result" not in st.session_state:
         st.session_state.last_result = None     # type: Optional[RunResult]
     if "last_run_dir" not in st.session_state:
@@ -161,6 +176,30 @@ def _sidebar() -> None:
                      "produced by extensions/traffic_generator/traffic_gen.py.",
             )
 
+            # Routing strategy is critical for queue behaviour — show it
+            # in the main flow, not buried in Advanced. With
+            # `first_compute` all GS funnel to one SAT and queue
+            # saturates fast; `per_gs_round_robin` spreads load.
+            dst_options = ["per_gs_round_robin", "first_compute"]
+            w.dst_strategy = st.selectbox(
+                "GS → compute SAT routing",
+                dst_options,
+                index=dst_options.index(w.dst_strategy)
+                       if w.dst_strategy in dst_options else 0,
+                help="per_gs_round_robin (recommended): each GS pinned "
+                     "to a distinct compute SAT — load is spread. "
+                     "first_compute: every GS sends to the lowest-ID "
+                     "C SAT — useful for stress-testing queue, but "
+                     "expect huge T_queue_wait at moderate loads.",
+            )
+            if w.dst_strategy == "first_compute":
+                st.warning(
+                    "⚠ All GS will funnel to a single compute SAT — "
+                    "queue will saturate quickly under any nontrivial "
+                    "load. Switch to per_gs_round_robin unless you "
+                    "specifically want to study this regime."
+                )
+
             if w.source == "synthetic":
                 w.lambda_total = float(st.slider(
                     "Λ_total (req/s, summed across GS)", 1, 1000,
@@ -212,17 +251,15 @@ def _sidebar() -> None:
                          "start at the trace's beginning.",
                 ))
 
-            with st.expander("Advanced (rarely needed)", expanded=False):
-                dst_options = ["first_compute", "per_gs_round_robin"]
-                w.dst_strategy = st.selectbox(
-                    "GS → compute SAT routing",
-                    dst_options,
-                    index=dst_options.index(w.dst_strategy),
-                    help="per_gs_round_robin spreads GS across compute "
-                         "SATs; first_compute funnels everything to one. "
-                         "Use first_compute only when you want to "
-                         "exercise queue behaviour deliberately.",
-                )
+            st.divider()
+            show_advanced = st.checkbox(
+                "Show advanced workload options",
+                value=False,
+                key="show_workload_advanced",
+                help="Routing strategy, stage mode, byte sizing — "
+                     "defaults are fine for most experiments.",
+            )
+            if show_advanced:
                 if w.source == "trace_replay":
                     w.trace_stage_mode = st.radio(
                         "Stage events into run dir as",
@@ -538,11 +575,35 @@ def _build_preview_globe(cfg: ExperimentConfig, *, show_isls: bool):
 
     isls: list[tuple[int, int]] = []
     if show_isls:
+        # Walker-Star +Grid:
+        #  - In-plane: every sat connects to its next neighbour in the
+        #    same orbit (wraps around within the plane — adjacent on the
+        #    same ring, chord is tiny).
+        #  - Cross-plane: connects to the same-index sat in the NEXT
+        #    plane, but NOT from the last plane back to the first.
+        #    Walker-Star has a "seam" at RAAN = 180°; wrapping there
+        #    would draw a chord across Earth (planes 0 and N_P-1 are
+        #    nearly antipodal in RAAN). Real Hypatia +Grid omits this
+        #    wraparound — we follow suit.
+        earth_r_km = 6371.0
         for p in range(n_p):
             for j in range(n_s):
                 a = p * n_s + j
+                # in-plane next
                 isls.append((a, p * n_s + ((j + 1) % n_s)))
-                isls.append((a, ((p + 1) % n_p) * n_s + j))
+                # cross-plane next (skip wraparound at the seam)
+                if p + 1 < n_p:
+                    isls.append((a, (p + 1) * n_s + j))
+        # Belt-and-suspenders: drop any segment whose chord midpoint
+        # falls inside Earth. Catches numerical edge cases at extreme
+        # inclinations / phase offsets where a non-wraparound link
+        # still happens to pass through the planet.
+        kept: list[tuple[int, int]] = []
+        for u, v in isls:
+            mid = 0.5 * (pts[u] + pts[v])
+            if (mid[0]**2 + mid[1]**2 + mid[2]**2) ** 0.5 > earth_r_km:
+                kept.append((u, v))
+        isls = kept
 
     gs_records = _load_gs_records(cfg.workload.gs_set)
     return make_globe_figure(

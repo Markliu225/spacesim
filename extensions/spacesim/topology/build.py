@@ -200,6 +200,101 @@ def _write_roles(
     return roles.count("C")
 
 
+def _generate_dynamic_state_and_augment(
+    *,
+    config,
+    state_dir: Path,
+    dyn_dir: Path,
+    roles_path: Path,
+    network_name: str,
+    max_gsl: float,
+    max_isl: float,
+    progress: ProgressFn,
+) -> None:
+    """Generate fstate_<t>.txt + gsl_if_bandwidth_<t>.txt and then
+    augment them with compute-SAT-dst routes.
+
+    Shared between the full-rebuild path and the cache-partial-hit
+    path (where only ``duration_seconds`` / ``update_interval_ms``
+    changed and we need a new dyn_subdir but the static state is
+    fine).
+    """
+    # satgenpy/satgen/dynamic_state/generate_dynamic_state.py ~line 59
+    # does `i % int(math.floor(total_iterations) / 10.0)`. With < 10
+    # iterations per thread the divisor is 0 and the worker raises
+    # ZeroDivisionError. We can't patch satgenpy here, so (a) compute
+    # the iteration count, (b) pick num_threads so each thread runs
+    # ≥ 10 iters, (c) bail with a clear error below 10 total.
+    total_iter = max(
+        1,
+        int(round(
+            config.simulation.duration_seconds * 1000
+            / max(config.simulation.update_interval_ms, 1)
+        )),
+    )
+    if total_iter < 10:
+        raise ValueError(
+            f"satgenpy needs ≥ 10 fstate timesteps to avoid a "
+            f"divide-by-zero in its progress logger; current config "
+            f"produces only {total_iter}. Either raise "
+            f"simulation.duration_seconds (currently "
+            f"{config.simulation.duration_seconds}s) or lower "
+            f"simulation.update_interval_ms (currently "
+            f"{config.simulation.update_interval_ms}ms)."
+        )
+    num_threads = max(1, min(2, total_iter // 10))
+    progress(
+        f"generating fstate for {config.simulation.duration_seconds}s @ "
+        f"{config.simulation.update_interval_ms}ms "
+        f"({total_iter} timesteps, {num_threads} thread(s))"
+    )
+    # satgen.help_dynamic_state mutates cwd to find state files by
+    # network name, so chdir to state_dir.parent first.
+    cwd_was = os.getcwd()
+    try:
+        os.chdir(state_dir.parent)   # state/
+        satgen.help_dynamic_state(
+            ".",
+            num_threads,
+            network_name,
+            config.simulation.update_interval_ms,
+            config.simulation.duration_seconds,
+            max_gsl,
+            max_isl,
+            "algorithm_free_one_only_over_isls",
+            False,                            # verbose
+        )
+    finally:
+        os.chdir(cwd_was)
+
+    # Augment for compute-SAT destinations.
+    _run_augment_fstate(state_dir, dyn_dir, roles_path, progress)
+
+
+def _regenerate_dynamic_state(
+    *,
+    config,
+    state_dir: Path,
+    dyn_dir: Path,
+    roles_path: Path,
+    network_name: str,
+    progress: ProgressFn,
+) -> None:
+    """Cache-partial-hit entry. Re-derive max_gsl/max_isl from the
+    cached shell config and call the shared generator.
+    """
+    shell = config.shells[0]
+    max_gsl = _max_gsl_length_m(shell.altitude_km, shell.min_elevation_deg)
+    max_isl = _max_isl_length_m(
+        shell.altitude_km, shell.num_planes, shell.sats_per_plane,
+    )
+    _generate_dynamic_state_and_augment(
+        config=config, state_dir=state_dir, dyn_dir=dyn_dir,
+        roles_path=roles_path, network_name=network_name,
+        max_gsl=max_gsl, max_isl=max_isl, progress=progress,
+    )
+
+
 def _run_augment_fstate(
     state_dir: Path,
     dynamic_state_dir: Path,
@@ -288,7 +383,34 @@ def generate_topology(
     sentinel = out_root / ".dashboard_topology_ok"
 
     if sentinel.exists() and not force_regenerate:
-        progress(f"cache hit: {out_root}")
+        # topology_hash only covers `shells`. Changing simulation.duration
+        # or update_interval_ms re-uses the cached TLEs/ISLs but needs a
+        # NEW dynamic_state directory (its name encodes both numbers).
+        # If the requested dyn_dir doesn't have an `fstate_0.txt`, fall
+        # through to a partial regen: keep tles/isls/gsl/roles, just
+        # re-build dynamic_state for the new (duration, interval) pair.
+        dyn_fstate_zero = dyn_dir / "fstate_0.txt"
+        if dyn_fstate_zero.exists():
+            progress(f"cache hit: {out_root}")
+            return TopologyResult(
+                state_dir=state_dir,
+                dynamic_state_dir=dyn_dir,
+                roles_path=roles_path,
+                num_satellites=shell.total_sats,
+                num_ground_stations=int(_count_lines(roles_path.parent / "ground_stations.basic.txt")),
+                network_name=network_name,
+                cache_hit=True,
+            )
+        progress(
+            f"cache partial hit: tles/isls present but dyn_state "
+            f"({dyn_subdir}) missing. Regenerating dynamic state only."
+        )
+        # Skip ahead to step 7 below by calling the shared helper.
+        _regenerate_dynamic_state(
+            config=config, state_dir=state_dir,
+            dyn_dir=dyn_dir, roles_path=roles_path,
+            network_name=network_name, progress=progress,
+        )
         return TopologyResult(
             state_dir=state_dir,
             dynamic_state_dir=dyn_dir,
@@ -296,7 +418,7 @@ def generate_topology(
             num_satellites=shell.total_sats,
             num_ground_stations=int(_count_lines(roles_path.parent / "ground_stations.basic.txt")),
             network_name=network_name,
-            cache_hit=True,
+            cache_hit=True,   # tles/isls came from cache; only fstate is fresh
         )
 
     if force_regenerate and out_root.exists():
@@ -372,59 +494,14 @@ def generate_topology(
         f"(planes {compute_planes})"
     )
 
-    # 7. Dynamic state (the slow one).
-    #
-    # NOTE: satgenpy/satgen/dynamic_state/generate_dynamic_state.py line ~59
-    # has `i % int(math.floor(total_iterations) / 10.0)`. With < 10
-    # iterations on a thread, the divisor is 0 and the worker raises
-    # ZeroDivisionError. We can't patch satgenpy (Phase A/B/C constraint
-    # forbids it), so we (a) compute the iteration count up front,
-    # (b) pick num_threads so each thread runs >= 10 iterations,
-    # (c) bail with a clear error if the total is below 10 — there is no
-    # safe num_threads for that case.
-    total_iter = max(
-        1,
-        int(round(
-            config.simulation.duration_seconds * 1000
-            / max(config.simulation.update_interval_ms, 1)
-        )),
+    # 7+8. Dynamic state + augment fstate. Shared with the
+    # "cache-partial-hit" path above (when only the duration / interval
+    # changed and we need a different dyn_subdir).
+    _generate_dynamic_state_and_augment(
+        config=config, state_dir=state_dir, dyn_dir=dyn_dir,
+        roles_path=roles_path, network_name=network_name,
+        max_gsl=max_gsl, max_isl=max_isl, progress=progress,
     )
-    if total_iter < 10:
-        raise ValueError(
-            f"satgenpy needs ≥ 10 fstate timesteps to avoid a divide-by-zero "
-            f"in its progress logger; current config produces only "
-            f"{total_iter}. Either raise simulation.duration_seconds "
-            f"(currently {config.simulation.duration_seconds}s) or lower "
-            f"simulation.update_interval_ms "
-            f"(currently {config.simulation.update_interval_ms}ms)."
-        )
-    num_threads = max(1, min(2, total_iter // 10))
-    progress(
-        f"generating fstate for {config.simulation.duration_seconds}s @ "
-        f"{config.simulation.update_interval_ms}ms "
-        f"({total_iter} timesteps, {num_threads} thread(s))"
-    )
-    # satgen.help_dynamic_state mutates cwd to look up state files via the
-    # network name, so set the working dir to the parent of state_dir.
-    cwd_was = os.getcwd()
-    try:
-        os.chdir(state_dir.parent)   # state/
-        satgen.help_dynamic_state(
-            ".",
-            num_threads,
-            network_name,
-            config.simulation.update_interval_ms,
-            config.simulation.duration_seconds,
-            max_gsl,
-            max_isl,
-            "algorithm_free_one_only_over_isls",
-            False,                            # verbose
-        )
-    finally:
-        os.chdir(cwd_was)
-
-    # 8. Augment fstate for compute SATs (Phase A's tool).
-    _run_augment_fstate(state_dir, dyn_dir, roles_path, progress)
 
     # Mark cache valid.
     sentinel.touch()
