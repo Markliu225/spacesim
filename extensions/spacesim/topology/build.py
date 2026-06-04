@@ -139,12 +139,61 @@ def _max_isl_length_m(
 
 
 def _select_gs_basic_subset(
-    gs_set: str, dst: Path, _progress: ProgressFn
+    gs_set: str, dst: Path, _progress: ProgressFn,
+    *, gs_config_path: str = "",
 ) -> int:
-    """Write the first N rows of the bundled top-100 file to ``dst``.
+    """Materialise a Hypatia-format ``ground_stations.basic.txt`` at
+    ``dst`` and return the number of GS written.
 
-    Returns the number of ground stations written.
+    Two modes:
+
+    - ``gs_config_path`` empty: take the first N rows of Hypatia's
+      bundled top-100 file (``gs_set`` decides N). Backwards-compatible
+      with the preset-only world.
+    - ``gs_config_path`` non-empty: read a custom JSON file (same
+      shape as ``traffic_generator/ground_stations.json``: a list of
+      dicts with at least ``name``, ``lat``, ``lon``). Each row
+      becomes one GS in the order it appears in the file; gs_idx is
+      the list index (the JSON's own ``gs_idx`` is honoured if
+      present but must equal the list index to keep ordering sane).
+      ``elevation`` defaults to 0 m if missing.
+
+    The Hypatia basic format is:
+        ``<id>,<name>,<lat>,<lon>,<elev_m>``
+
+    Sanity: empty / non-list / missing-required-key JSON raises with
+    a clear message. The validation in :class:`ExperimentConfig`
+    already catches these before reaching here, but we re-check to
+    keep this helper standalone.
     """
+    if gs_config_path:
+        import json as _json
+        with open(gs_config_path) as f:
+            data = _json.load(f)
+        if not isinstance(data, list) or not data:
+            raise ValueError(
+                f"gs_config_path {gs_config_path}: expected a non-empty "
+                f"list of dicts, got {type(data).__name__}"
+            )
+        rows: List[str] = []
+        for i, entry in enumerate(data):
+            for key in ("name", "lat", "lon"):
+                if key not in entry:
+                    raise ValueError(
+                        f"gs_config_path row {i}: missing required key "
+                        f"{key!r} (have {sorted(entry.keys())})"
+                    )
+            name = str(entry["name"])
+            lat = float(entry["lat"])
+            lon = float(entry["lon"])
+            elev_m = int(round(float(entry.get("elevation_m", 0))))
+            # Hypatia parses lat/lon as floats so float repr is fine.
+            rows.append(f"{i},{name},{lat},{lon},{elev_m}")
+        with open(dst, "w") as f:
+            for row in rows:
+                f.write(row + "\n")
+        return len(rows)
+
     src = _PAPER_INPUT_DATA / "ground_stations_cities_sorted_by_estimated_2025_pop_top_100.basic.txt"
     if not src.exists():
         raise FileNotFoundError(
@@ -155,7 +204,7 @@ def _select_gs_basic_subset(
         raise ValueError(f"unknown gs_set {gs_set!r}; choices: {sorted(counts)}")
     n = counts[gs_set]
 
-    rows: List[str] = []
+    rows = []
     with open(src) as f:
         for line in f:
             if not line.strip():
@@ -430,7 +479,10 @@ def generate_topology(
     # 1. Ground stations (basic format), then extend with ECEF.
     progress(f"selecting GS subset: {config.workload.gs_set}")
     gs_basic_path = out_root / "ground_stations.basic.txt"
-    num_gs = _select_gs_basic_subset(config.workload.gs_set, gs_basic_path, progress)
+    num_gs = _select_gs_basic_subset(
+        config.workload.gs_set, gs_basic_path, progress,
+        gs_config_path=config.workload.gs_config_path,
+    )
     progress(f"  -> {num_gs} ground stations")
 
     progress("extending GS with ECEF coordinates")

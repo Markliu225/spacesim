@@ -112,6 +112,44 @@ def make_ground_stations_trace(
     )
 
 
+def make_gsl_lines_trace(
+    sat_ecef_km: np.ndarray,
+    gs_records: Sequence[Tuple[int, str, float, float]],
+    gsl_links: Sequence[Tuple[int, int, float]],
+) -> go.Scatter3d:
+    """Draw GSL lines (GS → in-view sat) for the given handovers.
+
+    ``gsl_links[k] = (gs_record_idx, sat_idx, distance_km)``.
+
+    GSLs are drawn in green at low opacity so motion is visible (as
+    time advances, the lines snap from one sat to another). Sat
+    indices here always refer to the full sat_ecef_km — not the
+    downsampled set used for marker rendering — so even when transit
+    sats are decimated the GSL endpoint is still correct.
+    """
+    xs: List[float] = []
+    ys: List[float] = []
+    zs: List[float] = []
+    n_drawn = 0
+    for gs_k, sat_idx, _d in gsl_links:
+        if gs_k >= len(gs_records) or sat_idx >= len(sat_ecef_km):
+            continue
+        _gid, _name, lat, lon = gs_records[gs_k][:4]
+        gx, gy, gz = latlon_to_ecef_km(lat, lon, 0.0)
+        sx, sy, sz = sat_ecef_km[sat_idx]
+        xs.extend([gx, sx, None])
+        ys.extend([gy, sy, None])
+        zs.extend([gz, sz, None])
+        n_drawn += 1
+    return go.Scatter3d(
+        x=xs, y=ys, z=zs,
+        mode="lines",
+        line=dict(color="rgba(47,158,55,0.75)", width=2),
+        name=f"active GSL ({n_drawn})",
+        hoverinfo="skip",
+    )
+
+
 def make_isl_lines_trace(
     ecef_km: np.ndarray, isls: Iterable[Tuple[int, int]],
     *, max_edges: int = 1000,
@@ -145,6 +183,7 @@ def make_globe_figure(
     gs_records: Sequence[Tuple[int, str, float, float]],
     *,
     isls: Optional[Sequence[Tuple[int, int]]] = None,
+    gsl_links: Optional[Sequence[Tuple[int, int, float]]] = None,
     title: Optional[str] = None,
     downsample_transit: bool = True,
 ) -> go.Figure:
@@ -178,7 +217,14 @@ def make_globe_figure(
     traces.extend(make_satellites_trace(plot_ecef, plot_roles, sat_ids=plot_ids))
     traces.append(make_ground_stations_trace(gs_records))
     if isls:
-        traces.append(make_isl_lines_trace(plot_ecef, isls))
+        # ISL list is built against the original sat indices, so pass
+        # the un-downsampled positions: lines reach a valid endpoint
+        # even when the destination sat's MARKER was decimated.
+        traces.append(make_isl_lines_trace(sat_ecef_km, isls))
+    if gsl_links:
+        # Same logic for GSL: the GS latches to a specific sat index
+        # in the original numbering.
+        traces.append(make_gsl_lines_trace(sat_ecef_km, gs_records, gsl_links))
 
     fig = go.Figure(data=traces)
     fig.update_layout(

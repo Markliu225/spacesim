@@ -82,6 +82,14 @@ class WorkloadConfig:
     """
 
     gs_set: Literal["top_5_cities", "top_20_cities", "top_100_cities"] = "top_5_cities"
+    # Optional path to a custom GS JSON (same shape as
+    # traffic_generator/ground_stations.json: list of dicts with
+    # name/lat/lon, optional gs_idx and peak_lambda). When set, this
+    # OVERRIDES gs_set: the topology places exactly the GS in this
+    # file, in the file's order. Use this when you also want
+    # traffic_generator to emit events for the same set — point both
+    # at the same JSON and gs_idx alignment is automatic.
+    gs_config_path: str = ""
     source: Literal["synthetic", "trace_replay"] = "synthetic"
     # Path to a per_gs/ directory containing events_gs<N>_*.csv files
     # (relative or absolute). Only consulted when source == "trace_replay".
@@ -171,14 +179,39 @@ class ExperimentConfig:
     # ---- hash for topology cache ---------------------------------------
 
     def topology_hash(self) -> str:
-        """Stable digest based *only* on the shell list.
+        """Stable digest of inputs that change the generated constellation.
 
-        Workload, compute params, and simulation duration don't affect
-        the generated constellation, so they're excluded so that tweaking
-        them doesn't bust the (expensive) satgenpy cache.
+        Always includes the shell list. Also includes the chosen GS
+        identity (preset name OR custom JSON's content) because two
+        runs with different GS placements need different cached
+        state — the GSL geometry and the resulting fstate routes
+        differ.
+
+        Workload (λ, L_in distribution), compute params (α/β/γ), and
+        simulation duration are NOT in the hash, so tweaking them
+        reuses the cache.
         """
         shells_dict = [dataclasses.asdict(s) for s in self.shells]
-        payload = json.dumps(shells_dict, sort_keys=True).encode("utf-8")
+        gs_marker: object = self.workload.gs_set
+        if self.workload.gs_config_path:
+            try:
+                import os.path
+                with open(self.workload.gs_config_path, "rb") as f:
+                    blob = f.read()
+                gs_marker = {
+                    "path": os.path.abspath(self.workload.gs_config_path),
+                    "sha1": hashlib.sha1(blob).hexdigest()[:16],
+                    "size": len(blob),
+                }
+            except OSError:
+                # File missing — fall through with just the path string
+                # so the hash still differs from preset mode.
+                gs_marker = {"path": self.workload.gs_config_path,
+                             "missing": True}
+        payload = json.dumps(
+            {"shells": shells_dict, "gs": gs_marker},
+            sort_keys=True,
+        ).encode("utf-8")
         return hashlib.sha1(payload).hexdigest()[:16]
 
     # ---- validation -----------------------------------------------------
@@ -202,6 +235,39 @@ class ExperimentConfig:
             if not (0 < s.compute_ratio <= 1):
                 errors.append(f"shell {i}: compute_ratio {s.compute_ratio} outside (0, 1]")
         w = self.workload
+        if w.gs_config_path:
+            import os.path
+            if not os.path.isfile(w.gs_config_path):
+                errors.append(
+                    f"workload: gs_config_path is not a file: "
+                    f"{w.gs_config_path}")
+            else:
+                # Light parse so we surface "wrong shape" early.
+                try:
+                    import json as _json
+                    with open(w.gs_config_path) as f:
+                        data = _json.load(f)
+                    if not isinstance(data, list) or not data:
+                        errors.append(
+                            f"workload: gs_config_path JSON must be a "
+                            f"non-empty list (got {type(data).__name__})")
+                    else:
+                        for i, row in enumerate(data):
+                            if not isinstance(row, dict):
+                                errors.append(
+                                    f"workload: gs_config row {i} not a "
+                                    f"dict")
+                                break
+                            for key in ("name", "lat", "lon"):
+                                if key not in row:
+                                    errors.append(
+                                        f"workload: gs_config row {i} "
+                                        f"missing '{key}'")
+                                    break
+                except Exception as exc:
+                    errors.append(
+                        f"workload: gs_config_path JSON parse error: "
+                        f"{exc}")
         if w.source == "synthetic":
             if w.lambda_total <= 0:
                 errors.append(f"workload: lambda_total must be > 0 (got {w.lambda_total})")
@@ -218,8 +284,24 @@ class ExperimentConfig:
         if w.L_out_min > w.L_out_max:
             errors.append(f"workload: L_out_min {w.L_out_min} > L_out_max {w.L_out_max}")
         s = self.simulation
-        if not (5 <= s.duration_seconds <= 600):
-            errors.append(f"simulation: duration {s.duration_seconds}s outside [5, 600]")
+        if not (5 <= s.duration_seconds <= 7200):
+            errors.append(
+                f"simulation: duration {s.duration_seconds}s outside [5, 7200]")
+        # Guard against fstate count explosion. satgenpy writes one
+        # fstate_<t>.txt per (duration / update_interval) step, and the
+        # augmenter rewrites each. Above ~5000 files the augment step
+        # dominates wallclock and disk usage gets silly.
+        if s.update_interval_ms > 0:
+            n_fstate = (s.duration_seconds * 1000) // s.update_interval_ms
+            if n_fstate > 5000:
+                suggested = max(1000, int((s.duration_seconds * 1000) / 1000))
+                errors.append(
+                    f"simulation: duration={s.duration_seconds}s × "
+                    f"update_interval={s.update_interval_ms}ms = "
+                    f"{n_fstate} fstate files (cap is 5000). Use a "
+                    f"larger update_interval_ms (try "
+                    f"{suggested}ms for ≤ 1000 files)."
+                )
         return errors
 
     @property

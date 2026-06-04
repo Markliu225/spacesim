@@ -1,1 +1,0 @@
-req_id,compute_sat_id,t_first_arrival_ns,t_last_arrival_ns,D_gather_ns,total_pkts_expected,total_pkts_received,src_node_id,L_in,L_out_expected,t_emit_ns

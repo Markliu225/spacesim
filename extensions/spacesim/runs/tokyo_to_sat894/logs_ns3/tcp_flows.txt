@@ -1,2 +1,0 @@
-TCP Flow ID     Source    Target    Size            Start time (ns)   End time (ns)     Duration        Sent            Progress     Avg. rate       Finished?     Metadata
-0               1584      894       8.00 Mbit       200000000         2264150950        2064.15 ms      8.00 Mbit       100.0%       3.9 Mbit/s      YES           phase_a_gs0_to_compute

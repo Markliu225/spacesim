@@ -150,16 +150,51 @@ def _sidebar() -> None:
 
         with st.expander("Ground traffic", expanded=False):
             w = cfg.workload
-            w.gs_set = st.selectbox(
-                "GS set (which cities the topology will place)",
-                ["top_5_cities", "top_20_cities", "top_100_cities"],
-                index=["top_5_cities", "top_20_cities", "top_100_cities"]
-                .index(w.gs_set),
-                help="The first N cities of Hypatia's top-100 file. "
-                     "The traffic_generator's events files use the same "
-                     "ordering (Tokyo, Delhi, …) — GS set ≥ trace's file "
-                     "count is required so every event has a valid GS.",
+
+            # GS source: preset OR custom JSON file. The custom mode
+            # lets the user share one GS config with traffic_generator
+            # so events_gs<N>_*.csv and topology GS node IDs stay
+            # aligned by construction.
+            gs_mode_options = ["Preset (Hypatia top-N)", "Custom JSON file"]
+            current_gs_mode = "Custom JSON file" if w.gs_config_path else "Preset (Hypatia top-N)"
+            gs_mode = st.radio(
+                "Ground stations",
+                gs_mode_options,
+                index=gs_mode_options.index(current_gs_mode),
+                horizontal=True,
+                help="Preset: first N of Hypatia's bundled top-100. "
+                     "Custom JSON: any file with [{name, lat, lon, ...}] — "
+                     "share it with traffic_generator/traffic_gen.py for "
+                     "automatic gs_idx alignment.",
             )
+            if gs_mode == "Custom JSON file":
+                default_gs_json = str(
+                    _HYPATIA_ROOT / "extensions" / "traffic_generator"
+                    / "ground_stations.json"
+                )
+                w.gs_config_path = st.text_input(
+                    "GS config JSON",
+                    value=w.gs_config_path or default_gs_json,
+                    help="Path to a JSON list. Each entry needs "
+                         "`name`, `lat`, `lon` (and may include "
+                         "`gs_idx`, `peak_lambda`, `elevation_m`).",
+                )
+                _render_custom_gs_preview(w.gs_config_path)
+            else:
+                # Clear the custom path so topology_hash collapses
+                # back to preset mode.
+                if w.gs_config_path:
+                    w.gs_config_path = ""
+                w.gs_set = st.selectbox(
+                    "GS set (which cities the topology will place)",
+                    ["top_5_cities", "top_20_cities", "top_100_cities"],
+                    index=["top_5_cities", "top_20_cities", "top_100_cities"]
+                    .index(w.gs_set),
+                    help="First N cities of Hypatia's top-100 file. "
+                         "The traffic_generator's default ground_stations.json "
+                         "matches this ordering (Tokyo, Delhi, …) "
+                         "for indices 0..9.",
+                )
 
             source_options = ["synthetic", "trace_replay"]
             source_labels = {
@@ -312,8 +347,26 @@ def _sidebar() -> None:
 
         with st.expander("Simulation", expanded=False):
             s = cfg.simulation
-            s.duration_seconds = int(st.slider(
-                "Duration (s)", 5, 60, int(s.duration_seconds), 1))
+            # Two-tier picker: minute-scale via slider (the common case)
+            # plus a "long sim" override for hour-scale experiments.
+            dur_mode = st.radio(
+                "Duration scale",
+                ["short (5–600s)", "long (1–120 min)"],
+                index=0 if s.duration_seconds <= 600 else 1,
+                horizontal=True,
+                key="dur_mode",
+                help="Long sims (>10 min) can take tens of minutes of "
+                     "wallclock and use much larger update_interval_ms "
+                     "to keep the fstate file count manageable.",
+            )
+            if dur_mode.startswith("short"):
+                s.duration_seconds = int(st.slider(
+                    "Duration (s)", 5, 600,
+                    int(min(s.duration_seconds, 600)), 5))
+            else:
+                s.duration_seconds = int(st.slider(
+                    "Duration (min)", 1, 120,
+                    int(max(1, s.duration_seconds // 60)), 1)) * 60
             try:
                 default_dt = datetime.fromisoformat(s.epoch_iso.replace("Z", "+00:00"))
             except ValueError:
@@ -325,9 +378,28 @@ def _sidebar() -> None:
                            .replace("+00:00", "Z"))
             s.update_interval_ms = int(st.selectbox(
                 "fstate update interval (ms)",
-                options=[100, 250, 500, 1000, 2000, 5000],
-                index=[100, 250, 500, 1000, 2000, 5000].index(s.update_interval_ms),
+                options=[100, 250, 500, 1000, 2000, 5000, 10000, 30000],
+                index=[100, 250, 500, 1000, 2000, 5000, 10000, 30000].index(
+                    s.update_interval_ms) if s.update_interval_ms in
+                    [100, 250, 500, 1000, 2000, 5000, 10000, 30000] else 3,
+                help="How often Hypatia rebuilds the routing forwarding "
+                     "table to reflect satellite motion. Smaller = more "
+                     "accurate handovers, but proportionally more "
+                     "fstate files. For long sims pick ≥ 1000 ms.",
             ))
+            # Cost preview: fstate count + a rough wallclock estimate.
+            n_fstate = (s.duration_seconds * 1000) // max(s.update_interval_ms, 1)
+            # Empirical: 30 s sim of moderate trace replay ≈ 10 s wallclock
+            # on this box. Scale linearly with duration; tighten when
+            # interval is small (augment dominates).
+            est_wallclock_s = (s.duration_seconds / 30.0) * 10.0
+            est_wallclock_s += n_fstate * 0.05  # augment + IO overhead per fstate
+            badge = "✓" if n_fstate <= 1000 else ("⚠" if n_fstate <= 5000 else "✗")
+            st.caption(
+                f"{badge} fstate files = **{int(n_fstate)}** (cap 5000). "
+                f"Rough wallclock estimate: **~{int(est_wallclock_s)} s** "
+                f"(~{est_wallclock_s/60:.1f} min)."
+            )
 
         st.divider()
 
@@ -376,6 +448,47 @@ def _sidebar() -> None:
                 for e in errs:
                     st.error(e)
         st.session_state["__run_clicked__"] = run_clicked
+
+
+def _render_custom_gs_preview(gs_config_path: str) -> None:
+    """Show the contents of a custom GS JSON, or surface a useful error.
+
+    Renders nothing if the path is empty. If the file exists and
+    parses, shows a small table (name + lat + lon + optional
+    peak_lambda) so the user can confirm what's about to be placed.
+    """
+    if not gs_config_path:
+        st.caption("Pick a JSON file.")
+        return
+    p = Path(gs_config_path).expanduser()
+    if not p.is_file():
+        st.warning(f"not a file: {p}")
+        return
+    import json as _json
+    try:
+        with open(p) as f:
+            data = _json.load(f)
+    except Exception as exc:
+        st.warning(f"JSON parse error: {exc}")
+        return
+    if not isinstance(data, list) or not data:
+        st.warning("JSON root must be a non-empty list of dicts.")
+        return
+    rows = []
+    for i, entry in enumerate(data):
+        if not isinstance(entry, dict):
+            st.warning(f"row {i} is not a dict; skipping.")
+            continue
+        rows.append({
+            "gs_idx": entry.get("gs_idx", i),
+            "name": entry.get("name", f"(row {i})"),
+            "lat": entry.get("lat"),
+            "lon": entry.get("lon"),
+            "peak_lambda": entry.get("peak_lambda", "—"),
+        })
+    st.caption(f"Loaded **{len(rows)}** ground stations from {p.name}.")
+    st.dataframe(pd.DataFrame(rows), use_container_width=True,
+                 hide_index=True)
 
 
 def _render_trace_fit_check(trace_dir_str: str, sim_duration_sec: int,
@@ -520,44 +633,99 @@ def _tab_globe() -> None:
 
     col_intro, col_action = st.columns([3, 1])
     with col_intro:
-        st.subheader("Constellation snapshot")
-        st.caption("Preview only — sats are placed analytically on circular "
-                   "orbits (no SGP-4) at t=0.")
+        st.subheader("Constellation snapshot (analytical preview)")
+        st.caption("Satellites propagate on circular orbits at the "
+                   "configured altitude/inclination; the Earth rotates "
+                   "underneath. GSLs are drawn from each GS to the "
+                   "nearest satellite above the min elevation. The "
+                   "actual simulator uses SGP-4 from real TLEs (close "
+                   "but not identical to this preview).")
     with col_action:
-        show_isls = st.checkbox("Draw +Grid ISLs", value=False,
-                                help="Up to 1000 edges rendered.")
-    fig = _build_preview_globe(cfg, show_isls=show_isls)
+        show_isls = st.checkbox(
+            "Draw +Grid ISLs", value=True,
+            help="Cross-plane wraparound is dropped (Walker-Star seam) "
+                 "and any chord that would pass through Earth is "
+                 "filtered out.")
+        show_gsl = st.checkbox(
+            "Draw GSL (active links)", value=True,
+            help="For each GS, the line points at the nearest "
+                 "in-view sat above the configured min elevation.")
+    # Time slider — drives orbital propagation + Earth rotation.
+    max_t = max(int(cfg.simulation.duration_seconds), 60)
+    if max_t <= 60:
+        # Fine-grained step in short sims so motion is visible.
+        time_sec = st.slider(
+            "Time within sim window (s)", 0, max_t, 0, 1, key="globe_t")
+    else:
+        time_sec = st.slider(
+            "Time within sim window (s)", 0, max_t, 0,
+            max(1, max_t // 200), key="globe_t")
+    fig = _build_preview_globe(cfg, time_sec=int(time_sec),
+                                show_isls=show_isls, show_gsl=show_gsl)
     st.plotly_chart(fig, use_container_width=True)
+    # Orbital period at this altitude, just so the slider's motion has
+    # a frame of reference.
+    import math
+    R_E_km = 6378.135
+    mu_km3_s2 = 398600.4418
+    a_km = R_E_km + shell.altitude_km
+    period_s = 2 * math.pi * math.sqrt(a_km ** 3 / mu_km3_s2)
     st.caption(
         f"Total sats: {shell.total_sats}  |  "
         f"Compute ratio: {shell.compute_ratio * 100:.0f}%  |  "
-        f"Min elevation: {shell.min_elevation_deg}°"
+        f"Min elevation: {shell.min_elevation_deg}°  |  "
+        f"Orbital period: {period_s/60:.1f} min  |  "
+        f"Earth rotates {360.0 * time_sec / 86400.0:.2f}° in this slice"
     )
 
 
-def _build_preview_globe(cfg: ExperimentConfig, *, show_isls: bool):
-    """Analytical (non-SGP-4) preview for the globe tab.
+def _build_preview_globe(cfg: ExperimentConfig, *, time_sec: int = 0,
+                          show_isls: bool = True, show_gsl: bool = True):
+    """Dynamic analytical preview for the globe tab.
 
-    Walker-Star: plane k uses RAAN = k·(180°/N_P); satellites in a plane
-    are uniformly spaced in true anomaly with the configured phase shift.
+    Computes ECEF satellite positions at ``time_sec`` by propagating
+    each sat through its orbit and rotating the inertial frame back
+    to Earth-fixed (so the GS stay stationary). For ``time_sec=0``
+    this matches the static preview.
+
+    Geometry shortcuts:
+      - Walker-Star: plane p uses inertial RAAN = p · π / N_P.
+      - Orbital mean motion = √(μ / a³).
+      - Earth rotation rate = 2π / 86 400 s (solar day; close enough
+        for visualization, sidereal would shift by ~4 min/day).
+      - In each plane, sat j starts at anomaly 2π j / N_S + Walker
+        phase shift, and advances by mean_motion · t.
+
+    The real ns-3 simulator uses SGP-4 on the cached TLEs, which
+    accounts for J2 oblateness and other perturbations not modelled
+    here. For preview the simpler propagator is good enough.
     """
     import math
 
     shell = cfg.shells[0]
-    R_E = 6371.0
-    R_sat = R_E + shell.altitude_km
+    R_E_km = 6378.135
+    R_sat = R_E_km + shell.altitude_km
     incl = math.radians(shell.inclination_deg)
     n_p, n_s = shell.num_planes, shell.sats_per_plane
     n_total = shell.total_sats
 
+    # Orbital + Earth dynamics
+    mu_km3_s2 = 398600.4418
+    mean_motion_rad_s = math.sqrt(mu_km3_s2 / (R_sat ** 3))
+    earth_rot_rad_s = 2.0 * math.pi / 86400.0
+    earth_rotation = earth_rot_rad_s * float(time_sec)
+
     pts = np.zeros((n_total, 3))
     for p in range(n_p):
-        raan = p * math.pi / max(n_p, 1)
+        # ECEF RAAN = inertial RAAN − ω⊕ · t  (Earth has spun under the orbit).
+        raan_inertial = p * math.pi / max(n_p, 1)
+        raan = raan_inertial - earth_rotation
         cos_O, sin_O = math.cos(raan), math.sin(raan)
         for j in range(n_s):
-            anomaly = (2 * math.pi * j / max(n_s, 1)
-                       + 2 * math.pi * (p * shell.phase_offset)
-                       / max(n_p * n_s, 1))
+            anomaly_0 = (2 * math.pi * j / max(n_s, 1)
+                         + 2 * math.pi * (p * shell.phase_offset)
+                         / max(n_p * n_s, 1))
+            anomaly = anomaly_0 + mean_motion_rad_s * float(time_sec)
             x_orb = R_sat * math.cos(anomaly)
             y_orb = R_sat * math.sin(anomaly)
             x_inc = x_orb
@@ -565,56 +733,144 @@ def _build_preview_globe(cfg: ExperimentConfig, *, show_isls: bool):
             z_inc = y_orb * math.sin(incl)
             x = cos_O * x_inc - sin_O * y_inc
             y = sin_O * x_inc + cos_O * y_inc
-            z = z_inc
-            pts[p * n_s + j] = (x, y, z)
+            pts[p * n_s + j] = (x, y, z_inc)
 
     from spacesim.topology.build import _assign_compute_planes
     planes_C = set(_assign_compute_planes(n_p, shell.compute_ratio))
     roles = ["C" if (i // max(n_s, 1)) in planes_C else "T"
              for i in range(n_total)]
 
+    # ISLs: same +Grid topology, dropping the cross-plane seam wraparound
+    # AND any segment whose chord midpoint dips below Earth (extra guard
+    # for edge inclinations / phase offsets).
     isls: list[tuple[int, int]] = []
     if show_isls:
-        # Walker-Star +Grid:
-        #  - In-plane: every sat connects to its next neighbour in the
-        #    same orbit (wraps around within the plane — adjacent on the
-        #    same ring, chord is tiny).
-        #  - Cross-plane: connects to the same-index sat in the NEXT
-        #    plane, but NOT from the last plane back to the first.
-        #    Walker-Star has a "seam" at RAAN = 180°; wrapping there
-        #    would draw a chord across Earth (planes 0 and N_P-1 are
-        #    nearly antipodal in RAAN). Real Hypatia +Grid omits this
-        #    wraparound — we follow suit.
-        earth_r_km = 6371.0
         for p in range(n_p):
             for j in range(n_s):
                 a = p * n_s + j
-                # in-plane next
                 isls.append((a, p * n_s + ((j + 1) % n_s)))
-                # cross-plane next (skip wraparound at the seam)
                 if p + 1 < n_p:
                     isls.append((a, (p + 1) * n_s + j))
-        # Belt-and-suspenders: drop any segment whose chord midpoint
-        # falls inside Earth. Catches numerical edge cases at extreme
-        # inclinations / phase offsets where a non-wraparound link
-        # still happens to pass through the planet.
         kept: list[tuple[int, int]] = []
         for u, v in isls:
             mid = 0.5 * (pts[u] + pts[v])
-            if (mid[0]**2 + mid[1]**2 + mid[2]**2) ** 0.5 > earth_r_km:
+            if float((mid * mid).sum()) ** 0.5 > R_E_km:
                 kept.append((u, v))
         isls = kept
 
-    gs_records = _load_gs_records(cfg.workload.gs_set)
+    gs_records = _load_gs_records(cfg.workload.gs_set,
+                                  cfg.workload.gs_config_path)
+
+    # GSLs: each GS connects to the nearest sat above min_elevation_deg.
+    # Changes as sats move in/out of view → motion is visible without
+    # the user needing to inspect a fstate file.
+    gsl_links: list[tuple] = []
+    if show_gsl and gs_records:
+        gsl_links = _compute_gsl_links(
+            pts, gs_records, shell.min_elevation_deg
+        )
+
+    title = (f"t = {time_sec}s  |  {n_p}×{n_s} = {n_total} sats "
+             f"@ {shell.altitude_km:.0f} km  |  "
+             f"compute = {sum(1 for r in roles if r == 'C')}, "
+             f"active GSL = {len(gsl_links)}/{len(gs_records)}")
     return make_globe_figure(
-        pts, roles, gs_records, isls=isls,
-        title=f"{n_p}×{n_s} = {n_total} sats @ {shell.altitude_km:.0f} km "
-              f"(compute = {sum(1 for r in roles if r == 'C')})",
+        pts, roles, gs_records, isls=isls, gsl_links=gsl_links,
+        title=title,
     )
 
 
+def _compute_gsl_links(sat_positions_km, gs_records,
+                       min_elevation_deg: float):
+    """For each GS, return (gs_idx, sat_idx, distance_km) for the
+    nearest sat above the minimum elevation angle. Empty list of
+    visibility check fails for that GS.
+    """
+    import math
+    min_elev_rad = math.radians(float(min_elevation_deg))
+    out: list[tuple[int, int, float]] = []
+    for k, rec in enumerate(gs_records):
+        _gs_id, _name, lat_deg, lon_deg = rec[:4]
+        gs_xyz = _latlon_to_ecef_km(lat_deg, lon_deg)
+        gs_norm = float(np.linalg.norm(gs_xyz))
+        if gs_norm == 0:
+            continue
+        best_idx = -1
+        best_d = float("inf")
+        for s_idx in range(len(sat_positions_km)):
+            dx = sat_positions_km[s_idx] - gs_xyz
+            d = float(np.linalg.norm(dx))
+            if d == 0:
+                continue
+            # Elevation = arcsin(dot(gs_unit, dx) / d). Above min_elev
+            # iff that ratio > sin(min_elev).
+            cos_zenith = float(np.dot(gs_xyz, dx)) / (gs_norm * d)
+            if cos_zenith < math.sin(min_elev_rad):
+                continue
+            if d < best_d:
+                best_d = d
+                best_idx = s_idx
+        if best_idx >= 0:
+            out.append((k, best_idx, best_d))
+    return out
+
+
+def _latlon_to_ecef_km(lat_deg: float, lon_deg: float):
+    """Convert geodetic lat/lon (degrees, alt=0) to ECEF km.
+
+    Spherical Earth approximation (good enough for preview; the
+    flattening at lat 30° contributes ~10 km out of 6378 km, well
+    inside the visual fidelity of the globe).
+    """
+    import math
+    R_E_km = 6378.135
+    lat = math.radians(lat_deg)
+    lon = math.radians(lon_deg)
+    cl = math.cos(lat)
+    return np.array([R_E_km * cl * math.cos(lon),
+                     R_E_km * cl * math.sin(lon),
+                     R_E_km * math.sin(lat)])
+
+
 @st.cache_data(show_spinner=False)
-def _load_gs_records(gs_set: str):
+def _load_gs_records(gs_set: str, gs_config_path: str = ""):
+    """Return ``[(gs_idx, name, lat, lon), …]`` for the globe preview.
+
+    Two sources, mirroring the topology builder:
+
+    - ``gs_config_path`` set: read the same JSON the topology will
+      use. Keeps preview and the actual cached topology aligned.
+    - Otherwise: take the first N rows from Hypatia's top-100 file.
+
+    Cached on inputs; if the user edits the JSON, change the path
+    or restart the dashboard.
+    """
+    out = []
+    if gs_config_path:
+        import json as _json
+        p = Path(gs_config_path).expanduser()
+        if not p.is_file():
+            return out
+        try:
+            with open(p) as f:
+                data = _json.load(f)
+        except Exception:
+            return out
+        if not isinstance(data, list):
+            return out
+        for i, entry in enumerate(data):
+            if not isinstance(entry, dict):
+                continue
+            try:
+                gs_idx = int(entry.get("gs_idx", i))
+                name = str(entry["name"])
+                lat = float(entry["lat"])
+                lon = float(entry["lon"])
+            except (KeyError, ValueError, TypeError):
+                continue
+            out.append((gs_idx, name, lat, lon))
+        return out
+
     src = (
         _HYPATIA_ROOT
         / "paper" / "satellite_networks_state" / "input_data"
@@ -622,7 +878,6 @@ def _load_gs_records(gs_set: str):
     )
     counts = {"top_5_cities": 5, "top_20_cities": 20, "top_100_cities": 100}
     n = counts.get(gs_set, 5)
-    out = []
     if not src.exists():
         return out
     with open(src) as f:

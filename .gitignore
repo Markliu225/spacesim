@@ -1,3 +1,25 @@
 .idea
 *.pyc
+__pycache__/
 dev_testing/
+
+# spacesim — derived data, never tracked.
+extensions/spacesim/cache/
+extensions/spacesim/runs/
+
+# traffic_generator — generated trace output, never tracked.
+extensions/traffic_generator/real_run/
+extensions/traffic_generator/azure_trace/
+
+# ns-3 build artifacts.
+ns3-sat-sim/simulator/build/
+ns3-sat-sim/simulator/.lock-*
+ns3-sat-sim/simulator/.waf*
+
+# Per-scenario run artifacts (kept under each scenario/run/).
+extensions/spacesim/scenarios/*/run/logs_ns3/
+extensions/spacesim/scenarios/*/gen_data/
+
+# Misc.
+.streamlit/
+*.egg-info/
